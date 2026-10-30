@@ -123,7 +123,7 @@ qu'à choisir les extraits.
     partir de l'étape « Sous-titres », en niveau avancé ;
   - **niveaux** (`studio.level.v1` dans le navigateur, modifiable à tout moment par « Changer de niveau ») : **avancé** = tout ce qui est
     décrit ici ; **débutant** = un parcours simple, plus court (7 étapes, sans écran de fin), en plus gros caractères, fait pour des
-    personnes peu à l'aise avec les sites : seulement les extraits proposés par l'IA (en grandes cartes, un seul bouton « Choisir cet
+    personnes peu à l'aise avec les sites (agrandi à partir de l'étape « Extrait » : l'étape « Niveau » a la même taille pour tout le monde) : seulement les extraits proposés par l'IA (en grandes cartes, un seul bouton « Choisir cet
     extrait » ; ni passage libre, ni recherche, ni réglage de bornes), seulement le **style** des sous-titres (ni police, couleurs, contour,
     position ni correction du texte), la musique sans catégories ni volumes, le format sans logo ni miroir, et la création sans choix
     de qualité (HD). Les outils masqués portent l'attribut `data-adv` (masqués en CSS dans `.studio[data-level="debutant"]`) ; leurs
