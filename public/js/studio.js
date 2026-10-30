@@ -1668,12 +1668,49 @@ async function openEditor(youtubeId) {
     S.voice = b.voice;
   }
   const LEVEL_LABEL = { debutant: 'Débutant', avance: 'Avancé' };
+
+  // Tutoriels vidéo (moins d'une minute, sans parole : tout est écrit à l'écran) ; fabriqués par tools/tutorial.
+  const TUTORIALS = {
+    debutant: { src: '/tutoriels/debutant.mp4', poster: '/tutoriels/debutant.jpg', title: 'Tutoriel : niveau débutant' },
+    avance: { src: '/tutoriels/avance.mp4', poster: '/tutoriels/avance.jpg', title: 'Tutoriel : niveau avancé' },
+  };
+  const tutoVideo = el('video', { class: 'st-tuto-video', controls: '', playsinline: '', preload: 'none' });
+  const tutoTitle = el('h2', { class: 'st-tuto-title', id: 'st-tuto-title' });
+  const tutoPick = el('button', { class: 'btn', type: 'button' });
+  const tutoClose = el('button', { class: 'btn secondary', type: 'button' }, 'Fermer');
+  const tutoDialog = el('dialog', { class: 'st-tuto', 'aria-labelledby': 'st-tuto-title' }, tutoTitle, tutoVideo, el('div', { class: 'st-tuto-actions' }, tutoPick, tutoClose));
+  let tutoOpener = null;
+  function openTutorial(level, opener) {
+    const t = TUTORIALS[level];
+    tutoOpener = opener;
+    tutoTitle.textContent = t.title;
+    tutoVideo.poster = t.poster;
+    tutoVideo.preload = 'auto';
+    tutoVideo.src = t.src;
+    tutoPick.textContent = `Choisir « ${LEVEL_LABEL[level]} »`;
+    tutoPick.onclick = () => {
+      tutoDialog.close();
+      setLevel(level);
+    };
+    tutoDialog.showModal();
+    tutoVideo.play().catch(() => {}); // lecture refusée (économie de données…) : la personne touche ▶
+  }
+  tutoClose.addEventListener('click', () => tutoDialog.close());
+  tutoDialog.addEventListener('click', (e) => { if (e.target === tutoDialog) tutoDialog.close(); }); // un appui à côté ferme aussi
+  tutoDialog.addEventListener('close', () => {
+    tutoVideo.pause();
+    tutoOpener?.focus();
+  });
+
   function renderLevel() {
-    const opt = (value, title, desc, what) => el('label', { class: S.level === value ? 'st-level on' : 'st-level' },
-      el('input', { type: 'radio', name: 'level', value, 'data-k': `level:${value}`, checked: S.level === value, onchange: () => setLevel(value) }),
-      el('strong', { class: 'st-level-title' }, title),
-      el('span', { class: 'st-level-desc' }, desc),
-      el('small', { class: 'st-level-what' }, what));
+    const opt = (value, title, desc, what) => el('div', { class: 'st-level-wrap' },
+      el('label', { class: S.level === value ? 'st-level on' : 'st-level' },
+        el('input', { type: 'radio', name: 'level', value, 'data-k': `level:${value}`, checked: S.level === value, onchange: () => setLevel(value) }),
+        el('strong', { class: 'st-level-title' }, title),
+        el('span', { class: 'st-level-desc' }, desc),
+        el('small', { class: 'st-level-what' }, what)),
+      el('button', { type: 'button', class: 'btn secondary st-tuto-btn', 'data-k': `tuto:${value}`, onclick: (e) => openTutorial(value, e.currentTarget) },
+        el('span', {}, '▶ Voir le tutoriel'), el('small', {}, 'Moins d’une minute')));
     putKeep(panelLevel,
       el('div', { class: 'st-levels', role: 'radiogroup', 'aria-label': 'Ton niveau' },
         opt('debutant', 'Débutant', 'Je n’utilise pas ce genre d’outils régulièrement et je crée rarement des vidéos TikTok.', 'Un parcours simple : tu choisis un extrait proposé, un style de sous-titres, une musique, et on s’occupe du reste.'),
@@ -1910,6 +1947,7 @@ async function openEditor(youtubeId) {
     el('div', { class: 'st-grid' }, el('div', { class: 'st-left' }, phone.root), stage),
     disclaimer(),
     toastEl,
+    tutoDialog,
   );
 
   const fromClip = await draftFromLibrary();
@@ -1945,6 +1983,7 @@ async function openEditor(youtubeId) {
     phone.pause();
     phone.setAudio({ url: null });
     audition.pause();
+    tutoVideo.pause();
     jobBox.querySelector('video')?.pause();
     removeEventListener('beforeunload', beforeUnload);
     removeEventListener('pagehide', onPageHide);

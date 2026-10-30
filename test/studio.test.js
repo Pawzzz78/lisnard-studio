@@ -120,6 +120,26 @@ test('studio : seules les vidéos autorisées sont listées, sans jamais exposer
   for (const p of [`/api/studio/file/${YT}`, `/videos/${YT}.mp4`, `/api/admin/videos/${videoRowId}/file`]) assert.ok([401, 404].includes((await fetch(base + p)).status), p);
 });
 
+test('tutoriels : vidéos verticales de moins d\'une minute avec leur affiche, lisibles par morceaux', { skip: !hasFfmpeg }, async () => {
+  const dirUrl = new URL('../public/tutoriels/', import.meta.url);
+  for (const name of ['debutant', 'avance']) {
+    const file = new URL(`${name}.mp4`, dirUrl).pathname;
+    const info = probe(file);
+    const video = info.streams.find((s) => s.codec_type === 'video');
+    assert.equal(video.codec_name, 'h264', name); // lu partout (navigateurs, téléphones)
+    assert.deepEqual([video.width, video.height], [720, 1280], name); // vertical, comme un téléphone
+    assert.ok(info.streams.some((s) => s.codec_type === 'audio'), `${name} : musique`);
+    const dur = Number(info.format.duration);
+    assert.ok(dur > 20 && dur < 60, `${name} : ${dur} s, il en faut moins d'une minute`);
+    assert.ok(Number(info.format.size) < 8 * 1024 * 1024, `${name} : moins de 8 Mo`);
+    assert.ok((await fs.stat(new URL(`${name}.jpg`, dirUrl))).size > 5000, `${name} : affiche`);
+    if (enabled) {
+      const res = await fetch(`${base}/tutoriels/${name}.mp4`, { headers: { Range: 'bytes=0-99' } });
+      assert.deepEqual([res.status, res.headers.get('content-type')], [206, 'video/mp4'], name); // le lecteur peut sauter dans la vidéo
+    }
+  }
+});
+
 test('demande : extraits, cadrage, style et musique validés', { skip: !enabled }, async () => {
   const { normalizeRequest } = studio;
   const video = { file_duration_s: 120 };

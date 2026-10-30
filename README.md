@@ -130,6 +130,11 @@ qu'à choisir les extraits.
     réglages sont remis à des valeurs simples (`BEGINNER_DEFAULTS` dans `studio-core.js` : ni miroir, ni logo, ni écran de fin, HD,
     musique à 25 %, voix à 100 %) et **rétablis** si la personne repasse en avancé (en mémoire : perdus si elle recharge la page entre
     les deux). Un passage libre choisi en avancé reste affiché (« Ton passage actuel ») mais ne se modifie pas en débutant ;
+  - **tutoriels vidéo** : chaque carte de niveau a un bouton « ▶ Voir le tutoriel » (moins d'une minute) qui ouvre la vidéo du niveau
+    (`public/tutoriels/debutant.mp4`, `avance.mp4`, avec leur affiche `.jpg`) dans une fenêtre, avec « Choisir ce niveau » et « Fermer ».
+    Vidéos verticales 720 × 1280, H.264, sans parole (tout est écrit à l'écran, avec une musique libre de droits de la bibliothèque) : elles
+    montrent le **vrai** site, parcouru par un curseur qui clique, enregistré puis monté avec `tools/tutorial/` (voir son README). Elles
+    ne sont chargées qu'au clic. Un test vérifie qu'elles restent verticales, sous la minute et sous 8 Mo ;
   - **réglage des bornes** : boutons − / + avec un pas au choix (0,1 s, 0,5 s par défaut, 1 s, 2 s, « Ligne » = jusqu'à la limite de ligne
     suivante, ou n'importe quelle durée de 0,01 à 30 s dans le champ libre) ; on peut aussi **taper l'instant exact** (`1:23,5`).
     Les bornes sont en millisecondes (arrondies au centième de seconde) ; une ligne coupée au milieu ne garde que les mots dits dans la
@@ -482,6 +487,7 @@ src/
   normalize.js       normalisation du texte (indexation)
   transcripts.js     Supadata + parseurs SRT/VTT/texte
 tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéos sans sous-titres, envoyée au site
+tools/tutorial/       enregistrement et montage des vidéos tutoriel du studio (Playwright + ffmpeg + Pillow)
   openrouter.js      client OpenRouter minimal (traduction, résumés, extraits)
   summarize.js       résumé d'une transcription (repères de temps, 2 étapes si très long, nettoyage)
   studio/            studio public : rendu ffmpeg (render.js), détection et reconnaissance des visages (faces.js, faces-worker.js, yunet.js, sface.js, identity.js, references.js, nn.js), mesure du fond des sous-titres (box-probe.js), images libres de droits Pixabay / Pexels (stock.js), polices (fonts.json), musiques d'origine et bibliothèque de l'admin (music.json, music.js)
