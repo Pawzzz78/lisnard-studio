@@ -1,7 +1,7 @@
 // Studio de clips : choix d'une interview, extraits (proposés par l'IA ou libres), sous-titres TikTok (style, police, couleurs,
 // contour, position, taille), musique, cadrage, puis création du MP4 sur le serveur. Aucun innerHTML : tout est posé en nœuds.
 import { CARD, PALETTES as EC_PALETTES, TEMPLATES as EC_TEMPLATES, cardBlob, drawEndCard, loadImage, needsPhoto } from './endcard.js';
-import { DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeStyle, sanitizeZoom, sourceText, wordsForExtracts } from './studio-core.js';
+import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
 import { createPhone, el, outlineShadow, rgba } from './studio-preview.js';
 import { fmtDate } from './ui.js';
 
@@ -10,6 +10,21 @@ const params = new URLSearchParams(location.search);
 const SWATCHES = [['#FFFFFF', 'Blanc'], ['#FFE600', 'Jaune'], ['#25F4EE', 'Cyan'], ['#FE2C55', 'Rose'], ['#7CFF6B', 'Vert'], ['#FF9500', 'Orange'], ['#000000', 'Noir']];
 const PREF_KEY = 'studio.prefs.v1';
 const MODELS_KEY = 'studio.models.v1';
+const LEVEL_KEY = 'studio.level.v1';
+const loadLevel = () => {
+  try {
+    return sanitizeLevel(localStorage.getItem(LEVEL_KEY));
+  } catch {
+    return null;
+  }
+};
+const saveLevel = (level) => {
+  try {
+    localStorage.setItem(LEVEL_KEY, level);
+  } catch {
+    // stockage indisponible : le niveau sera redemandé
+  }
+};
 const LOGO_KEY = 'studio.logo.v1';
 
 // Native replaceChildren would print null/false children as text
@@ -203,14 +218,12 @@ const fail = (node, e) => {
 
 // ---------------------------------------------------------------------------------------- étapes
 
-const STEP_LABELS = ['Interview', 'Extrait', 'Sous-titres', 'Musique', 'Format', 'Écran de fin', 'Créer'];
-
 /**
- * Barre des étapes (1 interview, 2 extrait, 3 sous-titres…). `go(n)` est appelé pour une étape accessible ;
+ * Barre des étapes (« Interview », « Niveau », « Extrait »…). `go(n)` est appelé pour une étape accessible ;
  * `sync(courante, accessible)` met à jour : étapes faites (✓), étape en cours, étapes encore fermées.
  */
-function createSteps(go) {
-  const buttons = STEP_LABELS.map((label, i) =>
+function createSteps(labels, go) {
+  const buttons = labels.map((label, i) =>
     el('button', { type: 'button', class: 'st-step', onclick: () => go(i + 1) }, el('span', { class: 'st-step-n', 'aria-hidden': 'true' }, String(i + 1)), el('span', { class: 'st-step-l' }, label)));
   const list = el('ol', { class: 'st-steps', 'aria-label': 'Étapes de création' }, buttons.map((b) => el('li', {}, b)));
   function sync(current, canGo = () => true) {
@@ -222,7 +235,7 @@ function createSteps(go) {
       else b.removeAttribute('aria-current');
       b.disabled = n !== current && !canGo(n);
       b.firstChild.textContent = n < current ? '✓' : String(n);
-      b.setAttribute('aria-label', `Étape ${n} sur ${STEP_LABELS.length} : ${STEP_LABELS[i]}${n < current ? ' (faite)' : n === current ? ' (en cours)' : ''}`);
+      b.setAttribute('aria-label', `Étape ${n} sur ${labels.length} : ${labels[i]}${n < current ? ' (faite)' : n === current ? ' (en cours)' : ''}`);
     });
   }
   return { root: list, sync };
@@ -236,11 +249,12 @@ async function showList() {
     put(root, el('section', { class: 'card st-empty' }, el('h2', {}, 'Le studio arrive bientôt'), el('p', {}, 'Aucune interview n’est encore disponible dans le studio. Reviens bientôt !')));
     return;
   }
-  const steps = createSteps(() => {});
+  const labels = stepLabels(loadLevel());
+  const steps = createSteps(labels, () => {});
   steps.sync(1, () => false); // les étapes suivantes s'ouvrent une fois l'interview choisie
   put(root,
     el('section', { class: 'card st-stepcard' }, steps.root),
-    el('section', { class: 'card st-pick' }, el('p', { class: 'eyebrow' }, `Étape 1 sur ${STEP_LABELS.length}`), el('h2', { class: 'section-title' }, 'Choisis ton interview'),
+    el('section', { class: 'card st-pick' }, el('p', { class: 'eyebrow' }, `Étape 1 sur ${labels.length}`), el('h2', { class: 'section-title' }, 'Choisis ton interview'),
       el('div', { class: 'st-list' }, videos.map((v) =>
         el('a', { class: 'st-video', href: `/?v=${v.youtube_id}` },
           v.thumbnail_url ? el('img', { src: v.thumbnail_url, alt: '', loading: 'lazy' }) : el('span', { class: 'thumb-empty', 'aria-hidden': 'true' }, '▶'),
@@ -268,6 +282,7 @@ async function openEditor(youtubeId) {
     lines: detail.lines.map(([start_ms, end_ms, text]) => ({ start_ms, end_ms, text })),
     suggestions: detail.suggestions,
     extracts: [], // { start_ms, end_ms, title, from } : bornes en millisecondes ; `from` : début de l'extrait proposé d'origine
+    level: loadLevel(), // 'debutant' | 'avance' | null (pas encore choisi) : voir « niveau » plus bas
     step: prefs.step === 'line' ? 'line' : Number.isFinite(prefs.step) && prefs.step >= 10 && prefs.step <= 30000 ? prefs.step : 500, // pas de réglage : 'line' (limite de ligne) ou durée en ms
     style: sanitizeStyle(prefs.style, fontIds),
     music: { id: assets.music.some((m) => m.id === prefs.music?.id) ? prefs.music.id : null, volume: Number.isFinite(prefs.music?.volume) ? prefs.music.volume : 0.25 },
@@ -391,6 +406,8 @@ async function openEditor(youtubeId) {
   document.head.append(el('style', {}, fontCss));
 
   // --- outils sur les extraits
+  /** Parcours débutant : les outils fins sont masqués (voir `data-adv` et studio.css). */
+  const easy = () => S.level === 'debutant';
   const exMs = (ex) => ({ start_ms: ex.start_ms, end_ms: ex.end_ms });
   const exDur = (ex) => (ex.end_ms - ex.start_ms) / 1000;
   const totalS = () => S.extracts.reduce((n, ex) => n + exDur(ex), 0);
@@ -507,7 +524,7 @@ async function openEditor(youtubeId) {
     else S.extracts.push(ex);
     justAdded = booting ? null : ex;
     extractsChanged();
-    if (!booting) toast(replace ? 'Extrait choisi : il remplace ton clip (voir « Mon clip »).' : 'Extrait ajouté à ton clip (voir « Mon clip »).');
+    if (!booting) toast(easy() ? 'Extrait choisi ✓' : replace ? 'Extrait choisi : il remplace ton clip (voir « Mon clip »).' : 'Extrait ajouté à ton clip (voir « Mon clip »).');
   }
   function extractsChanged(fine = false) {
     rebuildSubtitles();
@@ -637,7 +654,43 @@ async function openEditor(youtubeId) {
   }
 
   let suggShown = 6; // extraits proposés affichés d'emblée (les mieux notés d'abord) ; le reste sur demande
+  let easyShown = 3;
+
+  /** Niveau débutant : uniquement les extraits proposés par l'IA, en grandes cartes, un seul bouton par carte. */
+  function easyExtracts() {
+    const cur = S.extracts[0] ?? null;
+    const custom = cur && cur.from == null ? cur : null; // passage libre choisi en niveau avancé : on le garde, on ne le modifie pas ici
+    const pickBtn = (on, onclick, key) => el('button', { class: on ? 'btn st-easy-pick on' : 'btn st-easy-pick', type: 'button', 'aria-pressed': String(on), 'data-k': key, onclick }, on ? '✓ Extrait choisi' : 'Choisir cet extrait');
+    const card = (sg) => {
+      const on = cur?.from === sg.start_ms;
+      return el('li', { class: on ? 'st-easy-card on' : 'st-easy-card' },
+        el('h3', { class: 'st-easy-title' }, sg.title),
+        el('p', { class: 'st-easy-meta' }, `Durée : ${Math.round(sg.duration_s)} secondes`),
+        sg.why ? el('p', { class: 'st-easy-why' }, sg.why) : null,
+        el('details', {}, el('summary', {}, 'Lire le texte de cet extrait'), el('p', { class: 'st-text' }, sg.text)),
+        pickBtn(on, () => addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description, true), `easy:${sg.start_ms}`));
+    };
+    return [
+      custom ? el('div', { class: 'st-easy-card on' },
+        el('h3', { class: 'st-easy-title' }, 'Ton passage actuel'),
+        el('p', { class: 'st-easy-meta' }, `De ${mmss(custom.start_ms)} à ${mmss(custom.end_ms)} · ${Math.round(exDur(custom))} secondes`),
+        el('p', { class: 'st-easy-why' }, 'Tu l’as choisi toi-même en niveau avancé. Choisis un extrait ci-dessous pour le remplacer.'),
+        el('p', { class: 'st-easy-chosen' }, '✓ Extrait choisi')) : null,
+      S.suggestions.length
+        ? el('ul', { class: 'st-easy' }, S.suggestions.slice(0, easyShown).map(card))
+        : el('div', { class: 'st-easy-empty' },
+            el('p', {}, 'L’intelligence artificielle n’a pas trouvé de passage assez fort dans cette interview.'),
+            el('p', {}, 'Tu peux choisir une autre interview, ou passer en niveau avancé pour choisir toi-même le passage.'),
+            el('button', { class: 'btn secondary', type: 'button', onclick: () => { setLevel('avance'); renderExtracts(); } }, 'Passer en niveau avancé')),
+      S.suggestions.length > easyShown ? el('button', { class: 'btn secondary st-easy-more', type: 'button', onclick: () => { easyShown += 3; renderExtracts(); } }, 'Voir d’autres extraits') : null,
+    ];
+  }
+
   function renderExtracts() {
+    if (easy()) {
+      justAdded = null;
+      return putKeep(panelExtracts, ...easyExtracts());
+    }
     const taken = new Set(S.extracts.map((e) => e.from).filter((v) => v != null));
     const addLabel = S.extracts.length === 1 ? 'Utiliser cet extrait' : 'Remplacer mon clip par cet extrait';
     putKeep(panelExtracts,
@@ -748,8 +801,8 @@ async function openEditor(youtubeId) {
   }
   const panelStyle = el('div', { class: 'st-panel' });
   const lookWrap = el('div', {});
-  const textWrap = el('div', { hidden: true });
-  const subNav = el('div', { class: 'seg st-subnav', role: 'group', 'aria-label': 'Sous-titres' });
+  const textWrap = el('div', { hidden: true, 'data-adv': '' });
+  const subNav = el('div', { class: 'seg st-subnav', role: 'group', 'aria-label': 'Sous-titres', 'data-adv': '' });
   const openSub = (which) => {
     textWrap.hidden = which !== 'text';
     lookWrap.hidden = which !== 'look';
@@ -764,6 +817,7 @@ async function openEditor(youtubeId) {
   const rowGroup = row('Mots affichés à la fois', ...slider('wordsPerGroup', 1, 8, 1, (v) => `${v}`));
   lookWrap.append(
     el('h3', {}, 'Style'), presetGrid,
+    el('div', { 'data-adv': '' }, // niveau avancé : le reste des réglages (police, couleurs, contour, position…)
     el('h3', {}, 'Police'), fontGrid,
     el('h3', {}, 'Texte'),
     row('Taille', ...slider('size', 30, 220, 1, (v) => `${v}`)),
@@ -780,6 +834,7 @@ async function openEditor(youtubeId) {
     el('p', { class: 'st-help' }, 'Tu peux aussi glisser les sous-titres directement sur l’aperçu avec le doigt ou la souris.'),
     posButtons,
     toggle('animation_pop', 'Petit « pop » à l’apparition de chaque groupe', (checked) => ({ animation: checked ? 'pop' : 'none' })),
+    ),
   );
   boxRows.append(row('Couleur du fond', ...colorInput('boxColor')), row('Opacité du fond', ...slider('boxOpacity', 0, 1, 0.02, (v) => `${Math.round(v * 100)} %`)),
     row('Arrondi du fond', ...slider('boxRadius', 0, 1, 0.05, (v) => (v ? `${Math.round(v * 100)} %` : 'angles droits'))));
@@ -907,12 +962,13 @@ async function openEditor(youtubeId) {
     putKeep(panelMusic,
       el('h3', {}, 'Musique de fond'),
       el('p', { class: 'st-help' }, 'Motivantes, épiques, cinématiques : le morceau est joué sous la voix (en boucle s’il est plus court que le clip). Appuie sur ▶ pour écouter.'),
-      ...(cats.length > 1 ? [el('div', { class: 'st-chips', role: 'group', 'aria-label': 'Catégorie de musique' }, chip('all', 'Toutes', assets.music.length), cats.map((c) => chip(c.id, c.label, assets.music.filter((m) => m.category === c.id).length)))] : []),
+      ...(cats.length > 1 ? [el('div', { class: 'st-chips', role: 'group', 'aria-label': 'Catégorie de musique', 'data-adv': '' }, chip('all', 'Toutes', assets.music.length), cats.map((c) => chip(c.id, c.label, assets.music.filter((m) => m.category === c.id).length)))] : []),
       el('ul', { class: 'st-tracks' }, el('li', { class: S.music.id ? 'st-track' : 'st-track on' }, el('button', { type: 'button', class: 'st-trackname', 'data-k': 't:none', 'aria-pressed': String(!S.music.id), onclick: () => pick(null) }, el('strong', {}, 'Aucune musique'), el('small', {}, 'Seulement la voix')), S.music.id ? null : el('span', { class: 'badge ok' }, 'choisie')), shown.map(track)),
-      el('h3', {}, 'Volumes'),
-      vol('Musique', 'music', 0, 100, () => S.music.volume, (v) => { S.music.volume = v; }),
-      vol('Voix', 'voice', 0, 150, () => S.voice, (v) => { S.voice = v; }),
-      el('p', { class: 'st-help' }, 'Dans l’aperçu, le volume de la voix ne dépasse pas 100 % ; la vidéo finale applique bien le réglage.'),
+      el('div', { 'data-adv': '' },
+        el('h3', {}, 'Volumes'),
+        vol('Musique', 'music', 0, 100, () => S.music.volume, (v) => { S.music.volume = v; }),
+        vol('Voix', 'voice', 0, 150, () => S.voice, (v) => { S.voice = v; }),
+        el('p', { class: 'st-help' }, 'Dans l’aperçu, le volume de la voix ne dépasse pas 100 % ; la vidéo finale applique bien le réglage.')),
     );
   }
 
@@ -977,12 +1033,13 @@ async function openEditor(youtubeId) {
       el('h3', {}, 'Format de la vidéo'),
       el('div', { class: 'st-opts' }, opt('blur', 'Vidéo entière', 'Sur un fond flou fait avec la vidéo'), opt('crop', 'Plein écran', 'La vidéo est recadrée pour remplir l’écran')),
       S.layout.fit === 'crop' ? cropBlock() : null,
-      el('h3', {}, 'Ton logo'),
-      el('p', { class: 'st-help' }, 'Facultatif : le logo de ton compte, à l’endroit de ton choix, pendant tout le clip. Il n’apparaît que dans ta vidéo, jamais dans la version publiée dans la bibliothèque.'),
-      logoBlock(),
-      el('h3', {}, 'Miroir'),
-      el('label', { class: 'st-check' }, mirror, 'Retourner l’image horizontalement (miroir)'),
-      el('p', { class: 'st-help' }, 'L’image est retournée gauche-droite ; les sous-titres ne le sont jamais. Attention : les textes visibles dans l’image (panneaux, logos, bandeaux de chaîne) apparaîtront à l’envers. Le miroir ne change pas les droits sur la vidéo d’origine.'),
+      el('div', { 'data-adv': '' }, // niveau avancé seulement
+        el('h3', {}, 'Ton logo'),
+        el('p', { class: 'st-help' }, 'Facultatif : le logo de ton compte, à l’endroit de ton choix, pendant tout le clip. Il n’apparaît que dans ta vidéo, jamais dans la version publiée dans la bibliothèque.'),
+        logoBlock(),
+        el('h3', {}, 'Miroir'),
+        el('label', { class: 'st-check' }, mirror, 'Retourner l’image horizontalement (miroir)'),
+        el('p', { class: 'st-help' }, 'L’image est retournée gauche-droite ; les sous-titres ne le sont jamais. Attention : les textes visibles dans l’image (panneaux, logos, bandeaux de chaîne) apparaîtront à l’envers. Le miroir ne change pas les droits sur la vidéo d’origine.')),
     );
   }
 
@@ -1126,8 +1183,8 @@ async function openEditor(youtubeId) {
   function renderCreateSummary() {
     const track = assets.music.find((m) => m.id === S.music.id);
     put(createSummary, el('ul', { class: 'st-sum' },
-      el('li', {}, el('strong', {}, 'Durée : '), S.extracts.length ? `${secs(totalS())} (${S.extracts.length} extrait${S.extracts.length > 1 ? 's' : ''})` : 'aucun extrait choisi'),
-      el('li', {}, el('strong', {}, 'Sous-titres : '), `${PRESETS[S.style.preset].label}, ${fontById.get(S.style.font).label}`),
+      el('li', {}, el('strong', {}, 'Durée : '), S.extracts.length ? (easy() ? secs(totalS()) : `${secs(totalS())} (${S.extracts.length} extrait${S.extracts.length > 1 ? 's' : ''})`) : 'aucun extrait choisi'),
+      el('li', {}, el('strong', {}, 'Sous-titres : '), easy() ? PRESETS[S.style.preset].label : `${PRESETS[S.style.preset].label}, ${fontById.get(S.style.font).label}`),
       el('li', {}, el('strong', {}, 'Musique : '), track ? track.title : 'aucune'),
       editedInClip() ? el('li', {}, el('strong', {}, 'Texte : '), `${editedInClip()} ligne${editedInClip() > 1 ? 's' : ''} de sous-titres corrigée${editedInClip() > 1 ? 's' : ''}`) : null,
       S.endCard.on ? el('li', {}, el('strong', {}, 'Écran de fin : '), `${S.endCard.dur} s`) : null,
@@ -1258,8 +1315,9 @@ async function openEditor(youtubeId) {
       el('h3', {}, 'Description à copier-coller'),
       captionHelp,
       sourceBox,
-      el('h3', {}, 'Qualité'),
-      el('div', { class: 'st-opts' }, quality('hd', 'HD 1080 × 1920', 'Meilleure qualité, un peu plus long à créer'), quality('fast', 'Rapide 720 × 1280', 'Création plus rapide, fichier plus léger')),
+      el('div', { 'data-adv': '' },
+        el('h3', {}, 'Qualité'),
+        el('div', { class: 'st-opts' }, quality('hd', 'HD 1080 × 1920', 'Meilleure qualité, un peu plus long à créer'), quality('fast', 'Rapide 720 × 1280', 'Création plus rapide, fichier plus léger'))),
       el('label', { class: 'st-check pledge' }, pledge, 'Je m’engage à ne pas déformer le sens des propos de cette interview, y compris dans les sous-titres que j’ai corrigés.'),
       makeBtn, makeHint, makeMsg, jobBox,
       el('p', { class: 'st-help' }, 'Ta vidéo est conservée une heure sur le serveur : télécharge-la dès qu’elle est prête.'),
@@ -1585,49 +1643,147 @@ async function openEditor(youtubeId) {
     sourceField.rows = Math.min(12, Math.max(3, wrapped + 1));
   }
 
+  // ============================================================ niveau : débutant ou avancé
+  // Le parcours avancé est le studio complet ; le parcours débutant retire les outils fins (voir `data-adv`, `easyExtracts` et studio.css).
+  const panelLevel = el('div', { class: 'st-panel' });
+  let beginnerBackup = null; // réglages avancés mis de côté pendant le parcours débutant, rendus au retour en avancé
+  function enterBeginner() {
+    if (S.extracts.length > 1) S.extracts = S.extracts.slice(0, 1); // un seul extrait en débutant
+    if (beginnerBackup) return;
+    beginnerBackup = { mirror: S.layout.mirror, logoOn: S.logo.on, endCardOn: S.endCard.on, quality: S.layout.quality, musicVolume: S.music.volume, voice: S.voice };
+    Object.assign(S.layout, { mirror: BEGINNER_DEFAULTS.mirror, quality: BEGINNER_DEFAULTS.quality });
+    S.logo = { ...S.logo, on: BEGINNER_DEFAULTS.logoOn };
+    S.endCard = { ...S.endCard, on: BEGINNER_DEFAULTS.endCardOn };
+    S.music.volume = BEGINNER_DEFAULTS.musicVolume;
+    S.voice = BEGINNER_DEFAULTS.voice;
+  }
+  function leaveBeginner() {
+    if (!beginnerBackup) return;
+    const b = beginnerBackup;
+    beginnerBackup = null;
+    Object.assign(S.layout, { mirror: b.mirror, quality: b.quality });
+    S.logo = { ...S.logo, on: b.logoOn };
+    S.endCard = { ...S.endCard, on: b.endCardOn };
+    S.music.volume = b.musicVolume;
+    S.voice = b.voice;
+  }
+  const LEVEL_LABEL = { debutant: 'Débutant', avance: 'Avancé' };
+  function renderLevel() {
+    const opt = (value, title, desc, what) => el('label', { class: S.level === value ? 'st-level on' : 'st-level' },
+      el('input', { type: 'radio', name: 'level', value, 'data-k': `level:${value}`, checked: S.level === value, onchange: () => setLevel(value) }),
+      el('strong', { class: 'st-level-title' }, title),
+      el('span', { class: 'st-level-desc' }, desc),
+      el('small', { class: 'st-level-what' }, what));
+    putKeep(panelLevel,
+      el('div', { class: 'st-levels', role: 'radiogroup', 'aria-label': 'Ton niveau' },
+        opt('debutant', 'Débutant', 'Je n’utilise pas ce genre d’outils régulièrement et je crée rarement des vidéos TikTok.', 'Un parcours simple : tu choisis un extrait proposé, un style de sous-titres, une musique, et on s’occupe du reste.'),
+        opt('avance', 'Avancé', 'Je crée régulièrement des vidéos TikTok et je veux personnaliser complètement ma vidéo.', 'Tous les réglages : passage libre, durée, polices, couleurs, volumes, logo, miroir, écran de fin…')),
+      el('p', { class: 'st-help' }, 'Tu pourras changer de niveau à tout moment : ton extrait est gardé.'));
+  }
+  /** Applique un niveau : parcours (étapes), outils visibles et réglages simples du parcours débutant. */
+  function setLevel(level) {
+    if (!level || level === S.level) return;
+    S.level = level;
+    saveLevel(level);
+    root.dataset.level = level;
+    if (level === 'debutant') {
+      enterBeginner();
+      openSub('look'); // l'onglet « Texte » n'existe pas en débutant
+    } else leaveBeginner();
+    mountSteps();
+    renderLevel();
+    extractsChanged();
+    renderMusic();
+    renderFrame();
+    renderCreate();
+    renderEnd();
+    applyAudio();
+    pushFraming();
+    pushLogo();
+    syncStyleControls();
+    savePrefs(S);
+    openTab(root.dataset.tab || 'niveau');
+  }
+
   // ============================================================ mise en page : une étape à la fois
-  // étape 1 = choix de l'interview (page d'accueil du studio) ; les suivantes sont les panneaux ci-dessous, dans l'ordre
-  const STEPS = [
-    ['extraits', 'Choisis ton extrait', 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.', panelExtracts],
-    ['style', 'Choisis tes sous-titres', 'Le style, la police, les couleurs et la position. Tu peux aussi corriger le texte.', panelStyle],
-    ['musique', 'Ajoute de la musique', 'Facultatif : un fond sonore discret sous la voix.', panelMusic],
-    ['cadrage', 'Choisis le format', 'Comment la vidéo remplit l’écran vertical, et ton logo.', panelFrame],
-    ['fin', 'Termine sur un écran de fin', 'Facultatif : un visuel de quelques secondes ajouté après le clip.', panelEnd],
-    ['creer', 'Crée ta vidéo', 'Vérifie le résumé, puis lance la création.', panelCreate],
-  ];
-  const stepIds = STEPS.map(([id]) => id);
+  // étape 1 = choix de l'interview (page d'accueil du studio) ; les suivantes sont les panneaux ci-dessous, dans l'ordre (voir FLOW)
+  const CONTENT = {
+    niveau: { title: 'Quel est ton niveau ?', hint: 'Choisis ce qui te ressemble : on adapte les étapes pour que ce soit simple pour toi.', panel: panelLevel },
+    extraits: {
+      title: 'Choisis ton extrait',
+      hint: { debutant: 'Voici les meilleurs passages repérés par l’intelligence artificielle. Touche « Choisir cet extrait » sous celui qui te plaît : tu le vois tout de suite dans l’aperçu.', avance: 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.' },
+      panel: panelExtracts,
+    },
+    style: {
+      title: 'Choisis tes sous-titres',
+      hint: { debutant: 'Touche le style que tu préfères : tu le vois tout de suite dans l’aperçu.', avance: 'Le style, la police, les couleurs et la position. Tu peux aussi corriger le texte.' },
+      panel: panelStyle,
+    },
+    musique: {
+      title: 'Ajoute de la musique',
+      hint: { debutant: 'Facultatif. Touche ▶ pour écouter un morceau, puis touche son nom pour le choisir.', avance: 'Facultatif : un fond sonore discret sous la voix.' },
+      panel: panelMusic,
+    },
+    cadrage: {
+      title: 'Choisis le format',
+      hint: { debutant: 'Comment la vidéo remplit l’écran du téléphone.', avance: 'Comment la vidéo remplit l’écran vertical, et ton logo.' },
+      panel: panelFrame,
+    },
+    fin: { title: 'Termine sur un écran de fin', hint: 'Facultatif : un visuel de quelques secondes ajouté après le clip.', panel: panelEnd },
+    creer: {
+      title: 'Crée ta vidéo',
+      hint: { debutant: 'Vérifie le résumé, coche la case, puis touche « Créer la vidéo ».', avance: 'Vérifie le résumé, puis lance la création.' },
+      panel: panelCreate,
+    },
+  };
+  const textOf = (v) => (typeof v === 'string' ? v : v[easy() ? 'debutant' : 'avance']);
+  const stepList = () => stepsFor(S.level); // [{ id, label }] sans l'étape 1 (l'interview)
   const stage = el('div', { class: 'st-stage card' });
-  const steps = createSteps((n) => (n === 1 ? (location.href = '/') : openTab(stepIds[n - 2], true)));
+  let steps = createSteps(stepLabels(S.level), (n) => goStep(n));
+  const goStep = (n) => (n === 1 ? (location.href = '/') : openTab(stepList()[n - 2].id, true));
+  /** Reconstruit la barre des étapes (le niveau change le nombre d'étapes). */
+  function mountSteps() {
+    const next = createSteps(stepLabels(S.level), goStep);
+    steps.root.replaceWith(next.root);
+    steps = next;
+  }
   const stepEyebrow = el('p', { class: 'eyebrow' });
   const stepTitle = el('h2', { class: 'st-step-title', tabindex: '-1' });
   const stepHint = el('p', { class: 'st-help' });
-  const stepHead = el('header', { class: 'st-stephead' }, stepEyebrow, stepTitle, stepHint);
+  const levelNote = el('p', { class: 'st-levelnote' });
+  const stepHead = el('header', { class: 'st-stephead' }, stepEyebrow, stepTitle, stepHint, levelNote);
   const prevBtn = el('button', { class: 'btn secondary st-prev', type: 'button' });
   const nextBtn = el('button', { class: 'btn st-next', type: 'button' });
   const nextNote = el('p', { class: 'st-help st-next-note', role: 'status' });
   const nextBar = el('div', { class: 'st-nextbar' }, prevBtn, nextBtn, nextNote);
-  const stepOf = () => stepIds.indexOf(root.dataset.tab);
-  /** Boutons Retour / Suivant et barre des étapes : sans extrait choisi, on ne va pas plus loin que l'étape « Extrait ». */
+  const stepOf = () => stepList().findIndex((st) => st.id === root.dataset.tab);
+  /** Une étape est ouverte : le niveau choisi pour celles d'après le niveau, un extrait pour celles d'après l'extrait. */
+  const allowed = (id) => id === 'niveau' || (S.level !== null && (id === 'extraits' || S.extracts.length > 0));
+  /** Boutons Retour / Suivant et barre des étapes. */
   function syncNav() {
+    const list = stepList();
     const i = stepOf();
     if (i < 0) return;
-    const ready = S.extracts.length > 0;
-    steps.sync(i + 2, (n) => n === 1 || ready);
-    const next = STEPS[i + 1];
+    steps.sync(i + 2, (n) => n === 1 || allowed(list[n - 2].id));
+    const next = list[i + 1];
     nextBtn.hidden = !next;
-    nextBtn.disabled = !ready;
-    nextBtn.textContent = next ? `Étape suivante : ${STEP_LABELS[i + 2]} →` : '';
-    nextNote.textContent = !ready && next ? 'Choisis d’abord un extrait pour continuer.' : '';
+    nextBtn.disabled = !next || !allowed(next.id);
+    nextBtn.textContent = !next ? '' : list[i].id === 'niveau' ? 'Continuer →' : `Étape suivante : ${next.label} →`;
+    nextNote.textContent = next && !allowed(next.id) ? (list[i].id === 'niveau' ? 'Choisis ton niveau pour continuer.' : 'Choisis d’abord un extrait pour continuer.') : '';
     prevBtn.textContent = i === 0 ? '← Changer d’interview' : '← Retour';
   }
   function openTab(id, focus = false) {
-    STEPS.forEach(([sid, , , panel]) => (panel.hidden = sid !== id));
+    const list = stepList();
+    const i = list.findIndex((st) => st.id === id);
+    if (i < 0) return;
+    Object.entries(CONTENT).forEach(([sid, c]) => (c.panel.hidden = sid !== id));
     root.dataset.tab = id;
-    const i = stepIds.indexOf(id);
-    stepEyebrow.textContent = `Étape ${i + 2} sur ${STEPS.length + 1}`;
-    stepTitle.textContent = STEPS[i][1];
-    stepHint.textContent = STEPS[i][2];
-    modelsBar.hidden = id === 'extraits'; // les modèles enregistrent les réglages d'habillage : rien à faire avant l'extrait
+    stepEyebrow.textContent = `Étape ${i + 2} sur ${list.length + 1}`;
+    stepTitle.textContent = CONTENT[id].title;
+    stepHint.textContent = textOf(CONTENT[id].hint);
+    put(levelNote, id !== 'niveau' && S.level ? [`Niveau : ${LEVEL_LABEL[S.level]} · `, el('button', { type: 'button', class: 'st-link', onclick: () => openTab('niveau', true) }, 'Changer de niveau')] : null);
+    modelsBar.hidden = id === 'niveau' || id === 'extraits' || easy(); // les modèles enregistrent les réglages d'habillage : pas avant l'extrait, pas en débutant
+    if (id === 'niveau') renderLevel();
     syncNav();
     if (id !== 'musique' && auditionId) { audition.pause(); auditionId = null; renderMusic(); }
     if (id === 'creer') renderCreateSummary();
@@ -1637,14 +1793,14 @@ async function openEditor(youtubeId) {
       steps.root.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     }
   }
-  STEPS.forEach(([id, , , panel]) => {
+  Object.entries(CONTENT).forEach(([id, { panel }]) => {
     panel.id = `st-p-${id}`;
     panel.setAttribute('role', 'region');
     panel.setAttribute('aria-labelledby', 'st-step-title');
   });
   stepTitle.id = 'st-step-title';
-  prevBtn.addEventListener('click', () => (stepOf() === 0 ? (location.href = '/') : openTab(stepIds[stepOf() - 1], true)));
-  nextBtn.addEventListener('click', () => openTab(stepIds[stepOf() + 1], true));
+  prevBtn.addEventListener('click', () => (stepOf() === 0 ? (location.href = '/') : openTab(stepList()[stepOf() - 1].id, true)));
+  nextBtn.addEventListener('click', () => openTab(stepList()[stepOf() + 1].id, true));
   const modelsBar = el('div', { class: 'st-models' });
   let undoModel = null;
   const readModels = () => {
@@ -1736,7 +1892,7 @@ async function openEditor(youtubeId) {
     );
   }
 
-  stage.append(steps.root, stepHead, modelsBar, ...STEPS.map(([, , , p]) => p), nextBar);
+  stage.append(steps.root, stepHead, modelsBar, ...Object.values(CONTENT).map((c) => c.panel), nextBar);
   renderModels();
 
   // « ← Autres interviews » et le titre vont dans l'en-tête bleu : un titre long sur deux ou trois lignes (téléphone) ne déborde plus
@@ -1759,6 +1915,8 @@ async function openEditor(youtubeId) {
   const fromClip = await draftFromLibrary();
   const restored = fromClip ? restoreDraft(fromClip) : restoreDraft();
   if (fromClip && restored) saveDraftNow();
+  root.dataset.level = S.level ?? '';
+  if (easy()) enterBeginner();
   renderPresets();
   renderFonts();
   renderExtracts();
@@ -1772,7 +1930,7 @@ async function openEditor(youtubeId) {
   applyAudio();
   pushFraming();
   pushLogo();
-  openTab('extraits');
+  openTab('niveau');
 
   const best = [...S.suggestions].sort((x, y) => y.score - x.score)[0];
   if (!restored && best) addExtract(best.start_ms, best.end_ms, best.title, best.start_ms, best.description);
