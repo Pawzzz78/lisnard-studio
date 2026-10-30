@@ -76,7 +76,7 @@ qu'à choisir les extraits.
 - **Interrupteur « Autoriser les clips pour le public »**, par vidéo : tu choisis ce qui sera exposé, et tu ne dois autoriser que
   des vidéos dont tu peux diffuser des extraits (droits des chaînes d'origine).
 - **Extraits proposés par l'IA** : les moments les plus susceptibles de devenir **viraux sur TikTok**, de 15 à 60 s, jusqu'à 20 par
-  vidéo (au moins un toutes les 2 à 3 minutes d'interview quand c'est possible), avec titre factuel, raison et potentiel viral noté de 1
+  vidéo, seulement s'ils sont vraiment forts (voir « Qualité » ci-dessous), avec titre factuel, raison et potentiel viral noté de 1
   à 10 ; les 6 premiers sont affichés, le reste sur demande. La consigne du modèle décrit ce qui marche sur TikTok : accroche immédiate,
   moment fort (position tranchée, émotion, punchline, anecdote, chiffre qui surprend, sujet qui parle à beaucoup de monde), idée courte et
   complète, idéalement 20 à 45 s. Le modèle ne choisit que des **numéros de lignes** de la transcription : les horaires viennent de la
@@ -84,7 +84,15 @@ qu'à choisir les extraits.
   phrase entière et ne coupe jamais avant un « mais », une nuance, une réserve ou une condition qui change le sens. Résultats stockés ;
   ils sont signalés comme périmés si la transcription change. Modèle : `CLIP_MODEL`, par défaut `openai/gpt-4.1-mini` (sans raisonnement,
   environ 0,01 $ par interview), indépendant du modèle des résumés. Réglages : `CLIP_MAX_SUGGESTIONS` (20), `CLIP_MIN_S` (15),
-  `CLIP_MAX_S` (60) ; certains extraits sont écartés ensuite (durée hors limites, chevauchement avec un mieux noté).
+  `CLIP_MAX_S` (60), `CLIP_MIN_SCORE` (7) ; certains extraits sont écartés ensuite (durée hors limites, chevauchement avec un mieux noté).
+  **Qualité** : le modèle a l'ordre d'être sévère (note de 9-10 réservée à l'exceptionnel), de ne jamais proposer salutations, accueil,
+  remerciements, au revoir, transitions, questions de l'intervieweur ni phrases vagues, et de répondre par une liste vide plutôt que de
+  remplir. Le code écarte ensuite, sans modèle (`src/clip-quality.js`) : les notes sous `CLIP_MIN_SCORE` (1 pour tout garder), les extraits
+  qui saluent dans leurs 12 premiers mots ou prennent congé dans leurs 14 derniers, ceux dont plus de 6 % des mots sont des politesses,
+  ceux qui ont moins de 10 mots porteurs de sens, ceux faits surtout de questions (transcription ponctuée), et — pour une interview de
+  plus de 5 minutes — ceux des 60 premières ou dernières secondes sauf note de 9 ou plus. Une interview sans passage assez fort donne une
+  **liste vide** (conservée : le modèle n'est pas relancé à chaque ouverture) ; le studio propose alors le choix à la main dans la
+  transcription. Les extraits déjà générés ne sont pas filtrés après coup : il faut les régénérer depuis l'admin.
 - **Description TikTok prête à copier-coller** : le même appel au modèle écrit, pour chaque extrait, une accroche (1–2 phrases, fidèle à
   l'extrait) et **2 à 4 hashtags**. Elle est générée **une seule fois**, avec les extraits, et stockée avec eux (aucun appel de plus quand
   un visiteur ouvre le studio). Les hashtags sont nettoyés côté serveur (2 à 4, sans doublon, repli `#lisnard #politique`). Les

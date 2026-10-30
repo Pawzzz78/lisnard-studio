@@ -5,6 +5,9 @@ import { after, before, test } from 'node:test';
 import { CLIP_LIMITS, buildCaption, buildClip, mergeClips, parseClipJson, prepareSegments, refineSegments, suggestClipsFor, windowsFor } from '../src/clip-suggestions.js';
 import { LlmError } from '../src/openrouter.js';
 
+/** Texte qui a du fond (sinon le filtre de qualité écarte l'extrait comme creux). */
+const SUBSTANCE = 'la dépense publique explose, les communes paient la facture et les impôts augmentent partout';
+
 /** n segments de `step` secondes, texte « phrase i ». */
 const rows = (n, step = 5, extra = '') => Array.from({ length: n }, (_, i) => ({ start_ms: i * step * 1000, duration_ms: step * 1000, text: `phrase ${i} ${extra}`.trim() }));
 
@@ -148,11 +151,11 @@ after(async () => {
 const setSegments = (data) => db.withTransaction((c) => db.replaceSegments(c, videoId, data));
 
 test('génération : extraits stockés avec les horaires de la transcription, consignes éditoriales envoyées', { skip: !enabled }, async () => {
-  await setSegments(rows(60));
+  await setSegments(rows(60, 5, SUBSTANCE));
   let seen;
   const complete = async (req) => {
     seen = req;
-    return '{"clips":[{"start":4,"end":11,"title":"Sa position sur la dette","why":"Argument complet","score":8},{"start":20,"end":27,"title":"Les communes","why":"Exemple concret","score":9},{"start":22,"end":29,"title":"Chevauche le précédent","why":"x","score":3}]}';
+    return '{"clips":[{"start":4,"end":11,"title":"Sa position sur la dette","why":"Argument complet","score":9},{"start":20,"end":27,"title":"Les communes","why":"Exemple concret","score":10},{"start":22,"end":29,"title":"Chevauche le précédent","why":"x","score":3}]}';
   };
   const out = await svc.generateClipSuggestions(videoId, { complete, model: 'faux-modèle' });
   assert.deepEqual(out.clips.map((c) => [c.title, c.start_ms, c.end_ms]), [['Les communes', 100000, 140000], ['Sa position sur la dette', 20000, 60000]]);
@@ -162,7 +165,13 @@ test('génération : extraits stockés avec les horaires de la transcription, co
   assert.match(seen.system, /viral/);
   assert.match(seen.system, /accroche immédiate/);
   assert.match(seen.system, /punchline/);
-  assert.match(seen.system, /au moins un extrait toutes les 2 à 3 minutes/);
+  assert.doesNotMatch(seen.system, /au moins un extrait toutes les 2 à 3 minutes/); // plus de quota : mieux vaut peu d'extraits excellents
+  assert.match(seen.system, /Mieux vaut 3 extraits excellents que 15 moyens/);
+  assert.match(seen.system, /\{"clips":\[\]\}/);
+  assert.match(seen.system, /Ne propose JAMAIS/);
+  assert.match(seen.system, /salutations et l'accueil/);
+  assert.match(seen.system, /remerciements, les au revoir/);
+  assert.match(seen.system, /questions, relances et commentaires de l'intervieweur/);
   // légende TikTok générée avec les extraits, une fois : accroche + 2 à 4 hashtags
   assert.match(seen.system, /"description" : la légende TikTok/);
   assert.match(seen.system, /de 2 à 4 hashtags/);
@@ -175,17 +184,17 @@ test('génération : extraits stockés avec les horaires de la transcription, co
   assert.deepEqual([stored.clips.length, stored.model, stored.outdated], [2, 'faux-modèle', false]);
 
   // la transcription change : les extraits sont signalés comme périmés
-  await setSegments(rows(60, 5, 'corrigé'));
+  await setSegments(rows(60, 5, `${SUBSTANCE} corrigé`));
   assert.equal((await svc.getClipSuggestions(videoId)).outdated, true);
 });
 
 test('génération : tranches multiples pour une longue transcription, erreurs claires', { skip: !enabled }, async () => {
-  await setSegments(rows(500, 5, 'mot '.repeat(60))); // environ 120 000 caractères : plusieurs tranches
+  await setSegments(rows(500, 5, `${SUBSTANCE} `.repeat(6))); // environ 120 000 caractères : plusieurs tranches
   const calls = [];
   const complete = async (req) => {
     const first = Number(req.user.match(/^\[(\d+)\]/)[1]);
     calls.push(first);
-    return JSON.stringify({ clips: [{ start: first + 2, end: first + 9, title: `Extrait ${first}`, why: 'ok', score: 5 }] });
+    return JSON.stringify({ clips: [{ start: first + 2, end: first + 9, title: `Extrait ${first}`, why: 'ok', score: 9 }] });
   };
   const out = await svc.generateClipSuggestions(videoId, { complete });
   assert.ok(calls.length >= 3, `${calls.length} appels`);
@@ -260,11 +269,11 @@ test('légende TikTok : texte court, 2 à 4 hashtags valides sans doublon, entr�
 });
 
 test('légende TikTok : stockée avec chaque extrait, générée une seule fois', { skip: !enabled }, async () => {
-  await setSegments(rows(60));
+  await setSegments(rows(60, 5, SUBSTANCE));
   let calls = 0;
   const complete = async () => {
     calls++;
-    return '{"clips":[{"start":4,"end":11,"title":"Sa position sur la dette","why":"Argument complet","description":"La dette publique, expliquée simplement par David Lisnard.","hashtags":["#dette","#communes","#lisnard"],"score":8}]}';
+    return '{"clips":[{"start":4,"end":11,"title":"Sa position sur la dette","why":"Argument complet","description":"La dette publique, expliquée simplement par David Lisnard.","hashtags":["#dette","#communes","#lisnard"],"score":9}]}';
   };
   const out = await svc.generateClipSuggestions(videoId, { complete, model: 'faux-modèle' });
   assert.equal(out.clips[0].description, 'La dette publique, expliquée simplement par David Lisnard.\n\n#dette #communes #lisnard');
@@ -272,7 +281,91 @@ test('légende TikTok : stockée avec chaque extrait, générée une seule fois'
   assert.equal(stored.clips[0].description, out.clips[0].description); // relue telle quelle, sans nouvel appel au modèle
   assert.equal(calls, 1);
   // réponse sans légende (ancien format ou oubli du modèle) : légende de repli à partir du titre, hashtags par défaut
-  const bare = async () => '{"clips":[{"start":4,"end":11,"title":"Sa position","why":"x","score":7}]}';
+  const bare = async () => '{"clips":[{"start":4,"end":11,"title":"Sa position","why":"x","score":9}]}';
   const out2 = await svc.generateClipSuggestions(videoId, { complete: bare, model: 'faux-modèle' });
   assert.equal(out2.clips[0].description, 'Sa position\n\n#lisnard #politique');
+});
+
+// --- qualité : ce qui est creux est écarté ---------------------------------------------
+
+test('qualité : accueil, remerciements, creux, questions et bords de l\'interview sont écartés, le fond est gardé', async () => {
+  const { junkReason, contentWords, QUALITY } = await import('../src/clip-quality.js');
+  const bounds = { start_ms: 0, end_ms: 3_600_000 };
+  const clip = (text, over = {}) => ({ start_ms: 600_000, end_ms: 640_000, score: 8, text, ...over });
+  const fond = 'La dépense publique en France atteint cinquante-sept pour cent du produit intérieur brut. C\'est un record parmi les pays développés, et pourtant nos hôpitaux, nos écoles et nos routes se dégradent. Il faut oser baisser la dépense pour retrouver de la liberté.';
+  assert.equal(junkReason(clip(fond), bounds), null);
+  assert.equal(junkReason(clip('Quand j\'étais maire de Cannes, nous avons supprimé trois cents normes inutiles pour les commerçants. Résultat : les ouvertures de commerces ont augmenté, parce que la confiance libère l\'initiative locale.'), bounds), null);
+  // accueil
+  assert.equal(junkReason(clip('Bonjour David Lisnard, merci d\'être avec nous ce matin. Je suis ravi de vous recevoir dans cette émission, on va parler de l\'actualité.'), bounds), 'accueil ou salutations');
+  assert.equal(junkReason(clip('Bienvenue dans notre émission. Notre invité aujourd\'hui est maire de Cannes et président de l\'association des maires de France.'), bounds), 'accueil ou salutations');
+  assert.equal(junkReason(clip(`Bonjour à tous. ${fond}`), bounds), 'accueil ou salutations'); // salue dans ses premiers mots
+  // remerciements, au revoir
+  assert.equal(junkReason(clip('Merci beaucoup David Lisnard d\'avoir répondu à nos questions, ce fut un plaisir de vous recevoir. Merci à vous et bonne journée à tous.'), bounds), 'remerciements ou au revoir');
+  assert.equal(junkReason(clip(`${fond} Merci beaucoup, à bientôt !`), bounds), 'remerciements ou au revoir');
+  // un « merci » ou un « bonjour » au milieu d'un vrai propos ne suffit pas à l'écarter
+  assert.equal(junkReason(clip(`${fond} Je remercie d'ailleurs les maires qui se battent chaque jour, et je le dis aux Français qui nous écoutent.`), bounds), null);
+  // creux : pas de fond
+  assert.equal(junkReason(clip('Oui alors, effectivement, comme on dit, c\'est un sujet important, on en a déjà parlé, voilà, et puis c\'est comme ça, il faut voir, on verra bien.'), bounds), 'trop peu de contenu');
+  assert.ok(contentWords('Oui oui, voilà, bon, c\'est comme ça.') < QUALITY.minContentWords);
+  assert.ok(contentWords(fond) >= QUALITY.minContentWords);
+  // questions de l'intervieweur (transcription ponctuée)
+  assert.equal(junkReason(clip('Pourquoi les impôts augmentent-ils ? Est-ce que l\'État dépense trop ? Qui va payer la dette ? Et les communes dans tout ça ?'), bounds), 'questions de l\'intervieweur');
+  assert.equal(junkReason(clip(`Qui paie la dette ? Les Français. ${fond}`), bounds), null); // une question rhétorique suivie d'une réponse reste un extrait
+  // note
+  assert.equal(junkReason(clip(fond, { score: 6 }), bounds), 'note trop basse');
+  assert.equal(junkReason(clip(fond, { score: 7 }), bounds), null);
+  // 60 premières / dernières secondes : seulement une note de 9 ou plus
+  assert.equal(junkReason(clip(fond, { start_ms: 30_000, end_ms: 70_000 }), bounds), 'début de l\'interview');
+  assert.equal(junkReason(clip(fond, { start_ms: 30_000, end_ms: 70_000, score: 9 }), bounds), null);
+  assert.equal(junkReason(clip(fond, { start_ms: 3_540_000, end_ms: 3_590_000 }), bounds), 'fin de l\'interview');
+  assert.equal(junkReason(clip(fond, { start_ms: 60_000, end_ms: 100_000 }), bounds), null); // juste après la zone
+  // interview courte : pas d'« accueil » ni de « conclusion » à écarter
+  assert.equal(junkReason(clip(fond, { start_ms: 10_000, end_ms: 50_000 }), { start_ms: 0, end_ms: 120_000 }), null);
+  // seuil réglable
+  assert.equal(junkReason(clip(fond, { score: 3 }), bounds, { ...QUALITY, minScore: 1 }), null);
+});
+
+test('qualité : des extraits creux proposés par le modèle ne sont jamais renvoyés, même bien notés', async () => {
+  const fond = 'La dépense publique explose, les communes paient la facture et les impôts augmentent partout en France.';
+  // 80 lignes de 5 s (400 s) : l'accueil (lignes 0-3), du fond (le reste), des remerciements (dernières lignes)
+  const texts = Array.from({ length: 80 }, (_, i) => (i < 4 ? 'Bonjour à tous et bienvenue, merci de nous recevoir ce matin.' : i >= 77 ? 'Merci beaucoup, au revoir et bonne journée à tous.' : `${fond} ${i}`));
+  const data = texts.map((text, i) => ({ start_ms: i * 5000, duration_ms: 5000, text }));
+  const stats = {};
+  const complete = async () => JSON.stringify({ clips: [
+    { start: 0, end: 4, title: 'Accueil chaleureux', why: 'x', score: 9 },
+    { start: 30, end: 36, title: 'La dépense publique explose', why: 'x', score: 8 },
+    { start: 50, end: 56, title: 'Un passage faible', why: 'x', score: 5 },
+    { start: 74, end: 79, title: 'Les remerciements', why: 'x', score: 10 },
+  ] });
+  const clips = await suggestClipsFor(data, { complete, model: 'faux', stats });
+  assert.deepEqual(clips.map((c) => c.title), ['La dépense publique explose']);
+  assert.deepEqual([stats.proposed, stats.valid, stats.junk], [4, 4, 3]);
+});
+
+test('qualité : rien de fort dans l\'interview donne une liste vide conservée, pas une erreur', { skip: !enabled }, async () => {
+  await setSegments(rows(60, 5, SUBSTANCE));
+  let calls = 0;
+  const empty = async () => {
+    calls++;
+    return '{"clips":[]}';
+  };
+  const out = await svc.generateClipSuggestions(videoId, { complete: empty, model: 'faux' });
+  assert.deepEqual(out.clips, []);
+  const stored = await svc.getClipSuggestions(videoId);
+  assert.deepEqual([stored.clips.length, stored.outdated], [0, false]); // « déjà fait » : le modèle n'est pas relancé tout seul
+  // tout est écarté comme creux : liste vide aussi
+  const weak = async () => '{"clips":[{"start":4,"end":11,"title":"Faible","why":"x","score":4}]}';
+  assert.deepEqual((await svc.generateClipSuggestions(videoId, { complete: weak, model: 'faux' })).clips, []);
+  // en revanche, des propositions sans horaires valides restent une erreur à réessayer
+  const broken = async () => '{"clips":[{"start":499,"end":499,"title":"trop court"}]}';
+  await assert.rejects(svc.generateClipSuggestions(videoId, { complete: broken, model: 'faux' }), /aucun extrait utilisable/);
+  assert.equal(calls, 1);
+});
+
+test('consigne : version du prompt, note minimale et filtres décrits', async () => {
+  const { PROMPT_VERSION } = await import('../src/clip-suggestions.js');
+  const { QUALITY } = await import('../src/clip-quality.js');
+  assert.equal(PROMPT_VERSION, 'c5');
+  assert.equal(QUALITY.minScore, 7);
+  assert.equal(QUALITY.edgeMs, 60_000);
 });
