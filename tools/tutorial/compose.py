@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Montage du tutoriel : transforme l'enregistrement du site (record.mjs) en vidéo verticale 720 x 1280, 30 images par seconde.
+"""Montage du tutoriel : transforme les prises de vues du site (shoot.mjs) en vidéo verticale 720 x 1280, 30 images par seconde.
 
-Entrée : <dossier>/events.json + frames/*.jpg (captures du site, horodatées) ; sortie : un MP4 avec musique.
-Le montage ajoute ce que la capture ne contient pas : caméra qui zoome sur l'élément utile, curseur fluide, ondes de clic, légendes
-animées sous l'écran, barre de progression, introduction et conclusion, fondu entre deux images quand la page saute (défilement),
-musique libre de droits et petits sons de clic.
+Entrée : <dossier>/manifest.json + stills/*.jpg (images fixes du site) + clips/*.mp4 (le vrai extrait, rendu par le studio) ;
+sortie : un MP4 avec musique. Tout le mouvement est calculé ici, image par image, donc fluide : curseur, zoom de caméra, anneau autour du
+bouton, ondes de clic, fondus entre l'avant et l'après d'un clic, extrait qui se joue dans l'écran du téléphone, légendes et progression.
 """
-import argparse, bisect, json, math, os, subprocess, sys, wave
+import argparse, bisect, json, math, os, subprocess, sys, tempfile, wave
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -16,62 +15,33 @@ W, H = 720, 1280
 CARD = (20, 20, 680, 1000)        # carte qui montre le site : x, y, largeur, hauteur
 PANEL_Y = 1040                    # début de la zone des légendes
 BLUE, DARK, PINK, CHAMOIS, WHITE = (29, 37, 122), (15, 23, 82), (208, 22, 95), (222, 219, 189), (255, 255, 255)
-INTRO_S, OUTRO_S = 2.6, 2.8
+INTRO_S, OUTRO_S = 2.2, 2.4
+CLIP_MAX = 3.4                    # durée maximale de lecture de l'extrait dans le téléphone
 
 def clamp(v, lo, hi): return max(lo, min(hi, v))
 def ease(u):
     u = clamp(u, 0, 1)
     return 4 * u * u * u if u < 0.5 else 1 - pow(-2 * u + 2, 3) / 2
 def ease_out(u): return 1 - pow(1 - clamp(u, 0, 1), 3)
+def ease_back(u):
+    u = clamp(u, 0, 1)
+    c1, c3 = 1.4, 2.4
+    return 1 + c3 * pow(u - 1, 3) + c1 * pow(u - 1, 2)
 
 def font(name, size): return ImageFont.truetype(os.path.join(a.fonts, name), size)
 
-# ------------------------------------------------------------------ lecture de l'enregistrement
-def load(dirpath):
-    d = json.load(open(os.path.join(dirpath, 'events.json')))
-    frames = d['frames']
-    ev = d['events']
-    start = next(e for e in ev if e['type'] == 'start')['t']
-    end = next(e for e in ev if e['type'] == 'end')['t']
-    return d, frames, ev, start, end
-
-class Warp:
-    """Vitesse de lecture par morceaux : relie le temps de l'enregistrement (s) au temps du montage (o)."""
-    def __init__(self, ev, start, end):
-        marks = [(start, 1.0)] + [(e['t'], e['factor']) for e in ev if e['type'] == 'speed' and start <= e['t'] <= end]
-        self.seg = []
-        o = 0.0
-        for i, (t, f) in enumerate(marks):
-            t1 = marks[i + 1][0] if i + 1 < len(marks) else end
-            self.seg.append((t, t1, o, f))
-            o += (t1 - t) / f
-        self.total = o
-    def to_out(self, s):
-        for t0, t1, o0, f in self.seg:
-            if s <= t1: return o0 + (max(s, t0) - t0) / f
-        return self.total
-    def to_src(self, o):
-        for t0, t1, o0, f in self.seg:
-            if o <= o0 + (t1 - t0) / f: return t0 + (o - o0) * f
-        return self.seg[-1][1]
-
 class Camera:
-    def __init__(self, ev, vp):
-        base = (vp['width'] / 2, vp['height'] * 0.4, 1.0)
-        self.base = base
-        self.segs = []
-        cur = base
-        kfs = [e for e in ev if e['type'] == 'camera']
-        for k in kfs:
-            to = (k['cx'], k['cy'], k['zoom'])
-            cur = self.at(k['t']) if self.segs else to
-            self.segs.append((k['t'], k['t'] + k['dur'], cur, to))
+    """Caméra : suite de mouvements (instant, centre x, centre y, zoom, durée) ; chacun part de l'état atteint à cet instant."""
+    def __init__(self, base=(180, 265, 1.0)):
+        self.base, self.segs = base, []
+    def to(self, t, cx, cy, z, dur):
+        cur = self.at(t) if self.segs else self.base
+        self.segs.append((t, t + dur, cur, (cx, cy, z)))
     def at(self, s):
         cur = self.base
         for t0, t1, a0, a1 in self.segs:
             if s < t0: break
-            u = 1.0 if t1 <= t0 else clamp((s - t0) / (t1 - t0), 0, 1)
-            e = ease(u)
+            e = ease(1.0 if t1 <= t0 else (s - t0) / (t1 - t0))
             cur = tuple(a0[i] + (a1[i] - a0[i]) * e for i in range(3))
         return cur
 
@@ -239,127 +209,216 @@ def outro_frame(o, cfg, logo):
     im.alpha_composite(lay)
     return im.convert('RGB')
 
+# ------------------------------------------------------------------ déroulé : scènes -> événements datés
+def build(manifest):
+    vp = manifest['viewport']
+    ev = dict(states=[], moves=[], clicks=[], rings=[], clips=[], caps=[], cuts=[], starts=[])
+    cam = Camera((vp['width'] / 2, vp['height'] * 0.37, 1.0))
+    cursor = (vp['width'] * 0.72, vp['height'] * 0.93)
+    t = 0.0
+    first = True
+    for sc in manifest['scenes']:
+        files = sc['states']
+        ev['starts'].append(t); ev['cuts'].append(t)
+        ev['caps'].append((t, dict(num=sc['num'], title=sc['title'], hint=sc['hint'])))
+        ev['states'].append((t, files[0], 0.0 if first else 0.42, 'wipe'))
+        first = False
+        cam.to(t, vp['width'] / 2, vp['height'] * 0.37, 1.0, 0.5)
+        t += 0.7
+        for op in sc['ops']:
+            k = op['op']
+            if k == 'click':
+                r = op['target']
+                tx, ty = r['x'] + r['w'] / 2, r['y'] + r['h'] / 2
+                dist = math.hypot(tx - cursor[0], ty - cursor[1])
+                dur = clamp(0.5 + dist / 800, 0.6, 1.05)
+                cam.to(t, tx, ty - 10, 1.35 if r['w'] < 300 else 1.2, 0.8)
+                ev['rings'].append((t, t + dur + 0.25, r))
+                ev['moves'].append((t, dur, cursor, (tx, ty)))
+                cursor = (tx, ty)
+                t += dur + 0.16
+                ev['clicks'].append((t, tx, ty))
+                t += 0.07
+                if op['to'] is not None: ev['states'].append((t, files[op['to']], 0.2, 'fade'))
+                t += 0.55
+            elif k == 'clip':
+                p = op['phone']
+                frames_dir = op['frames_dir']
+                n = len(os.listdir(frames_dir))
+                dur = min(CLIP_MAX, n / FPS)
+                cam.to(t, p['x'] + p['w'] / 2, p['y'] + p['h'] / 2, 1.75, 0.8)
+                t += 0.5
+                ev['clips'].append((t, t + dur, frames_dir, p, n))
+                t += dur + 0.3
+                cam.to(t, vp['width'] / 2, vp['height'] * 0.37, 1.0, 0.6)
+                t += 0.25
+            elif k == 'wait':
+                if op.get('caption'): ev['caps'].append((t, op['caption']))
+                cam.to(t, vp['width'] / 2, vp['height'] * 0.4, 1.0, 0.6)
+                t += op['dur']
+                ev['states'].append((t, files[op['to']], 0.4, 'wipe'))
+                t += 0.6
+        t += 0.35
+    return ev, cam, t
+
 # ------------------------------------------------------------------ principal
 def main():
-    d, frames, ev, start, end = load(a.rec)
-    vp, scale = d['viewport'], d['scale']
+    manifest = json.load(open(os.path.join(a.rec, 'manifest.json')))
+    vp, scale = manifest['viewport'], manifest['scale']
     SW, SH = vp['width'] * scale, vp['height'] * scale
-    warp = Warp(ev, start, end)
-    cam = Camera(ev, vp)
-    times = [f['t'] for f in frames]
+    # images de l'extrait : une par 1/30 s
+    tmp = tempfile.mkdtemp(prefix='tuto-')
+    for sc in manifest['scenes']:
+        for op in sc['ops']:
+            if op['op'] == 'clip':
+                d = os.path.join(tmp, os.path.basename(op['file']).replace('.', '_'))
+                os.makedirs(d, exist_ok=True)
+                subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', os.path.join(a.rec, op['file']), '-vf', f'fps={FPS}', '-t', str(CLIP_MAX), '-q:v', '3', os.path.join(d, '%04d.jpg')], check=True)
+                op['frames_dir'] = d
+    ev, cam, main_s = build(manifest)
+    total = INTRO_S + main_s + OUTRO_S
+    n = int(total * FPS)
+    print(f'{main_s:.1f}s de montage, {total:.1f}s au total, {n} images', file=sys.stderr)
     cache = {}
-    def src_frame(s):
-        i = clamp(bisect.bisect_right(times, s) - 1, 0, len(frames) - 1)
-        if i not in cache:
-            if len(cache) > 8: cache.pop(next(iter(cache)))
-            cache[i] = Image.open(os.path.join(a.rec, frames[i]['file'])).convert('RGB')
-        return cache[i]
-    clicks = [e for e in ev if e['type'] == 'click']
-    moves = [e for e in ev if e['type'] == 'move']
-    cuts = [e['t'] for e in ev if e['type'] == 'cut']
-    jumps = [e['t'] for e in ev if e['type'] == 'jump']
-    caps = sorted([e for e in ev if e['type'] == 'caption'], key=lambda e: e['t'])
-    cap_cache = {}
+    def still(f):
+        if f not in cache:
+            if len(cache) > 10: cache.pop(next(iter(cache)))
+            cache[f] = Image.open(os.path.join(a.rec, f)).convert('RGB')
+        return cache[f]
+    cursor_img, tip, cs = make_cursor()
+    cursor_small = cursor_img.resize((cursor_img.width // cs, cursor_img.height // cs), Image.LANCZOS)
+    cursor_press = cursor_img.resize((int(cursor_img.width / cs * 0.84), int(cursor_img.height / cs * 0.84)), Image.LANCZOS)
+    tip_xy = (tip[0] / cs, tip[1] / cs)
+    logo = Image.open(os.path.join(ROOT, 'public/brand/projet-lisnard-clair.png')).convert('RGBA')
+    bg, mask, cfg = backdrop(), card_mask(), json.load(open(a.config))
+    cap_cache, frame_cache, mask_cache = {}, {}, {}
+    state_times = [e[0] for e in ev['states']]
+
     def cap_img(c):
         k = (c['num'], c['title'], c['hint'])
         if k not in cap_cache: cap_cache[k] = caption_layer(c['num'], c['title'], c['hint'], a.steps)
         return cap_cache[k]
-    cursor_img, tip, cs = make_cursor()
-    cursor_small = cursor_img.resize((cursor_img.width // cs * 1, cursor_img.height // cs * 1), Image.LANCZOS)
-    cursor_press = cursor_img.resize((int(cursor_img.width / cs * 0.84), int(cursor_img.height / cs * 0.84)), Image.LANCZOS)
-    tip_xy = (tip[0] / cs, tip[1] / cs)
-    logo = Image.open(os.path.join(ROOT, 'public/brand/projet-lisnard-clair.png')).convert('RGBA')
-    bg = backdrop()
-    mask = card_mask()
-    cfg = json.load(open(a.config))
-    main_s = warp.total
-    total = INTRO_S + main_s + OUTRO_S
-    n = int(total * FPS)
-    print(f'{len(frames)} images capturées, {warp.total:.1f}s de montage, {total:.1f}s au total, {n} images', file=sys.stderr)
-
-    def cursor_pos(s):
+    def cursor_pos(t):
         pos = None
-        for m in moves:
-            if m['t'] <= s:
-                u = 1.0 if m['dur'] <= 0 else clamp((s - m['t']) / m['dur'], 0, 1)
-                e = ease(u)
-                x0, y0, x1, y1 = m['x0'], m['y0'], m['x1'], m['y1']
-                dx, dy = x1 - x0, y1 - y0
+        for t0, dur, p0, p1 in ev['moves']:
+            if t0 <= t:
+                e = ease(1.0 if dur <= 0 else (t - t0) / dur)
+                dx, dy = p1[0] - p0[0], p1[1] - p0[1]
                 dist = math.hypot(dx, dy) or 1
-                bow = min(60, dist * 0.18) * (1 if dx >= 0 else -1)
-                cx, cy = x0 + dx / 2 - dy / dist * bow, y0 + dy / 2 + dx / dist * bow
-                pos = ((1 - e) ** 2 * x0 + 2 * (1 - e) * e * cx + e * e * x1, (1 - e) ** 2 * y0 + 2 * (1 - e) * e * cy + e * e * y1)
-        if pos is None:
-            st = next(e for e in ev if e['type'] == 'start')
-            pos = (st['x'], st['y'])
-        return pos
+                bow = min(50, dist * 0.16) * (1 if dx >= 0 else -1)
+                cx, cy = p0[0] + dx / 2 - dy / dist * bow, p0[1] + dy / 2 + dx / dist * bow
+                pos = ((1 - e) ** 2 * p0[0] + 2 * (1 - e) * e * cx + e * e * p1[0], (1 - e) ** 2 * p0[1] + 2 * (1 - e) * e * cy + e * e * p1[1])
+        return pos or (vp['width'] * 0.72, vp['height'] * 0.93)
+    def rounded(w, h, r):
+        k = (w, h, r)
+        if k not in mask_cache:
+            S = 3
+            m = Image.new('L', (w * S, h * S), 0)
+            ImageDraw.Draw(m).rounded_rectangle([0, 0, w * S - 1, h * S - 1], radius=r * S, fill=255)
+            mask_cache[k] = m.resize((w, h), Image.LANCZOS)
+        return mask_cache[k]
 
-    def ui_frame(o):
-        s = warp.to_src(o)
-        cx, cy, z = cam.at(s)
-        # coup d'accent au changement d'étape
+    def ui(t):
+        cx, cy, z = cam.at(t)
         k = 1.0
-        for ct in cuts:
-            if ct <= s < ct + 0.45: k = 1 + 0.06 * (1 - ease((s - ct) / 0.45))
-        z = z * k
+        for ct in ev['cuts']:
+            if ct <= t < ct + 0.5: k = 1 + 0.05 * (1 - ease((t - ct) / 0.5))
+        z *= k
         cw = SW / z
         ch = cw * CARD[3] / CARD[2]
         x0 = clamp(cx * scale - cw / 2, 0, SW - cw)
         y0 = clamp(cy * scale - ch / 2, 0, SH - ch)
+        f = CARD[2] / cw  # pixels du montage par pixel de l'image fixe
         def crop(img): return img.resize((CARD[2], CARD[3]), Image.LANCZOS, box=(x0, y0, x0 + cw, y0 + ch))
-        cur = crop(src_frame(s))
-        for jt in jumps:
-            if jt <= s < jt + 0.13:
-                before = crop(src_frame(jt - 0.02))
-                cur = Image.blend(before, cur, ease((s - jt) / 0.13))
-        ui = cur.convert('RGBA')
-        # ondes de clic puis curseur
-        ov = Image.new('RGBA', ui.size, (0, 0, 0, 0))
+        i = max(0, bisect.bisect_right(state_times, t) - 1)
+        _, cur_file, fade, kind = ev['states'][i]
+        img = crop(still(cur_file))
+        if fade > 0 and i > 0 and t - state_times[i] < fade:
+            u = ease((t - state_times[i]) / fade)
+            prev = crop(still(ev['states'][i - 1][1]))
+            if kind == 'wipe':
+                # volet qui découvre la nouvelle image du bas vers le haut (pas de superposition de deux pages différentes)
+                soft = 90
+                edge = (1 - u) * (CARD[3] + soft) - soft
+                m = np.clip((np.arange(CARD[3], dtype=np.float32)[:, None] - edge) / soft, 0, 1)
+                m = Image.fromarray((np.repeat(m, CARD[2], axis=1) * 255).astype(np.uint8))
+                img = Image.composite(img, prev, m)
+            else:
+                img = Image.blend(prev, img, u)
+        out = img.convert('RGBA')
+        def to_card(px, py): return ((px * scale - x0) * f, (py * scale - y0) * f)
+        # l'extrait joue dans l'écran du téléphone
+        for t0, t1, d, p, nfr in ev['clips']:
+            if t0 <= t <= t1 + 0.05:
+                idx = min(nfr, int((t - t0) * FPS) + 1)
+                if (d, idx) not in frame_cache:
+                    if len(frame_cache) > 40: frame_cache.pop(next(iter(frame_cache)))
+                    frame_cache[(d, idx)] = Image.open(os.path.join(d, f'{idx:04d}.jpg')).convert('RGB')
+                ins = 3
+                ax, ay = to_card(p['x'] + ins, p['y'] + ins)
+                bx, by = to_card(p['x'] + p['w'] - ins, p['y'] + p['h'] - ins)
+                w_, h_ = int(round(bx - ax)), int(round(by - ay))
+                if w_ > 4 and h_ > 4:
+                    fr = frame_cache[(d, idx)].resize((w_, h_), Image.LANCZOS)
+                    al = ease_out((t - t0) / 0.18)
+                    m = rounded(w_, h_, max(2, int(13 * scale * f)))
+                    if al < 1: m = m.point(lambda v: int(v * al))
+                    out.paste(fr, (int(round(ax)), int(round(ay))), m)
+        ov = Image.new('RGBA', out.size, (0, 0, 0, 0))
         od = ImageDraw.Draw(ov)
-        def to_card(px, py): return ((px * scale - x0) / cw * CARD[2], (py * scale - y0) / ch * CARD[3])
+        # anneau autour du bouton à toucher
+        for t0, t1, r in ev['rings']:
+            if t0 <= t <= t1:
+                u = (t - t0)
+                al = ease_out(u / 0.25) * (1 - ease((t - (t1 - 0.2)) / 0.2)) if t > t1 - 0.2 else ease_out(u / 0.25)
+                pulse = 0.65 + 0.35 * math.sin(u * 7.5)
+                ax, ay = to_card(r['x'] - 5, r['y'] - 5)
+                bx, by = to_card(r['x'] + r['w'] + 5, r['y'] + r['h'] + 5)
+                rad = int(14 * scale * f)
+                for grow, wd, aa in ((0, 5, 235), (8, 9, 70)):
+                    od.rounded_rectangle([ax - grow, ay - grow, bx + grow, by + grow], radius=rad + grow, outline=PINK + (int(aa * al * pulse),), width=wd)
         pressing = False
-        for c in clicks:
-            age = s - c['t']
+        for tc, x, y in ev['clicks']:
+            age = t - tc
             if 0 <= age < 0.7:
-                ox, oy = to_card(c['x'], c['y'])
+                ox, oy = to_card(x, y)
                 u = ease_out(age / 0.7)
-                r = 14 + 62 * u
-                al = int(230 * (1 - u))
-                od.ellipse([ox - r, oy - r, ox + r, oy + r], outline=PINK + (al,), width=5, fill=PINK + (int(al * 0.22),))
+                r = 14 + 64 * u
+                aa = int(230 * (1 - u))
+                od.ellipse([ox - r, oy - r, ox + r, oy + r], outline=PINK + (aa,), width=5, fill=PINK + (int(aa * 0.2),))
             if 0 <= age < 0.14: pressing = True
-        ui.alpha_composite(ov)
-        px, py = cursor_pos(s)
+        out.alpha_composite(ov)
+        px, py = cursor_pos(t)
         ox, oy = to_card(px, py)
         ci = cursor_press if pressing else cursor_small
         sx = ci.width / cursor_small.width
         pos = (int(ox - tip_xy[0] * sx), int(oy - tip_xy[1] * sx))
-        ui.paste(ci, pos, ci)
-        return ui
+        out.paste(ci, pos, ci)
+        return out
 
-    def main_frame(o):
-        s = warp.to_src(o)
+    def main_frame(t):
         canvas = bg.copy()
-        ui = ui_frame(o)
-        canvas.paste(ui.convert('RGB'), (CARD[0], CARD[1]), mask)
-        # légende courante
+        u = ease_out(t / 0.4)  # la carte entre en douceur au début
+        card = ui(t)
+        canvas.paste(card.convert('RGB'), (CARD[0], CARD[1] + int(24 * (1 - u))), mask)
         cur = None
-        for c in caps:
-            if c['t'] <= s: cur = c
+        for ct, c in ev['caps']:
+            if ct <= t: cur = (ct, c)
         if cur:
-            age = s - cur['t']
-            u = ease_out(age / 0.35)
-            layer = cap_img(cur)
-            lay = layer.copy()
-            lay.putalpha(lay.getchannel('A').point(lambda v: int(v * u)))
-            canvas.paste(lay, (0, PANEL_Y + int(26 * (1 - u))), lay)
+            age = t - cur[0]
+            e = ease_out(age / 0.35)
+            lay = cap_img(cur[1]).copy()
+            lay.putalpha(lay.getchannel('A').point(lambda v: int(v * e)))
+            canvas.paste(lay, (0, PANEL_Y + int(26 * (1 - e))), lay)
         return canvas
 
     music = os.path.join(ROOT, 'public', 'music', cfg['music'])
-    audio = build_audio(total, clicks, cuts, warp, music, a.out + '.wav', start)
+    audio = build_audio(total, [c[0] for c in ev['clicks']], ev['starts'], music, a.out + '.wav')
     cmd = ['ffmpeg', '-nostdin', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-', '-i', audio,
-           '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-af', 'loudnorm=I=-17:TP=-1.5:LRA=9', '-ar', '44100', '-c:a', 'aac', '-b:a', '128k', '-shortest', a.out]
+           '-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-af', 'loudnorm=I=-17:TP=-1.5:LRA=9', '-ar', '44100',
+           '-c:a', 'aac', '-b:a', '128k', '-shortest', a.out]
     ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    poster_at = int(1.9 * FPS)
+    poster_at = int(1.7 * FPS)
     for i in range(n):
         t = i / FPS
         if t < INTRO_S:
@@ -378,7 +437,7 @@ def main():
     os.remove(audio)
 
 # ------------------------------------------------------------------ son
-def build_audio(total, clicks, cuts, warp, music, wav_path, start):
+def build_audio(total, clicks, starts, music, wav_path):
     sr = 44100
     n = int(total * sr)
     raw = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-i', music, '-f', 's16le', '-ac', '2', '-ar', str(sr), '-'], capture_output=True, check=True).stdout
@@ -397,7 +456,7 @@ def build_audio(total, clicks, cuts, warp, music, wav_path, start):
     k = np.arange(int(0.09 * sr)) / sr
     tick = (np.sin(2 * np.pi * 1100 * k) * np.exp(-k * 55) * 0.5 + np.sin(2 * np.pi * 1650 * k) * np.exp(-k * 80) * 0.25 + rng.normal(0, 0.05, len(k)) * np.exp(-k * 120)).astype(np.float32)
     for c in clicks:
-        add(tick * 0.55, INTRO_S + warp.to_out(c['t']))
+        add(tick * 0.55, INTRO_S + c)
     kk = np.arange(int(0.42 * sr)) / sr
     noise = rng.normal(0, 1, len(kk)).astype(np.float32)
     w = np.cumsum(noise)
@@ -409,8 +468,8 @@ def build_audio(total, clicks, cuts, warp, music, wav_path, start):
         y += a_[i_] * (noise[i_] - y)
         out[i_] = y
     swoosh = (out * np.sin(np.pi * kk / kk[-1]) ** 1.5 * 0.9).astype(np.float32)
-    for ct in cuts:
-        add(swoosh * 0.35, INTRO_S + warp.to_out(ct) - 0.12)
+    for ct in starts:
+        add(swoosh * 0.35, INTRO_S + ct - 0.1)
     # introduction et conclusion : même musique, plus douce (déjà dans `env`) ; léger « boum » à l'arrivée du titre
     mix = np.clip(mix, -0.98, 0.98)
     pcm = (mix * 32767).astype(np.int16)

@@ -1,14 +1,15 @@
-// Interview de démonstration pour enregistrer les tutoriels : une vidéo d'exemple (dégradé aux couleurs du site, créée avec ffmpeg),
+// Interview de démonstration pour enregistrer les tutoriels : une vidéo d'exemple (silhouette qui parle, make_sample.py),
 // une transcription qui explique le studio et quatre extraits proposés. Rien de réel : aucune parole attribuée à une personne.
 // Usage : STORAGE_DIR=<dossier> DATABASE_URL=<base> node tools/tutorial/demo-seed.mjs
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const storage = path.resolve(process.env.STORAGE_DIR ?? 'data');
 const YT = 'TUTOdemo_01';
 mkdirSync(path.join(storage, 'videos'), { recursive: true });
-execFileSync('ffmpeg', ['-nostdin', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'gradients=s=1280x720:c0=0x1d257a:c1=0xb0ad85:c2=0xd0165f:n=3:speed=0.04:duration=60:rate=25', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', path.join(storage, 'videos', `${YT}.mp4`)]);
+execFileSync('python3', ['-I', fileURLToPath(new URL('./make_sample.py', import.meta.url)), path.join(storage, 'videos', `${YT}.mp4`), '60']);
 
 const db = await import('../../src/db.js');
 await db.initDb();
