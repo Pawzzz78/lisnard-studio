@@ -1,7 +1,7 @@
 // Studio de clips : choix d'une interview, extraits (proposés par l'IA ou libres), sous-titres TikTok (style, police, couleurs,
 // contour, position, taille), musique, cadrage, puis création du MP4 sur le serveur. Aucun innerHTML : tout est posé en nœuds.
 import { CARD, PALETTES as EC_PALETTES, TEMPLATES as EC_TEMPLATES, cardBlob, drawEndCard, loadImage, needsPhoto } from './endcard.js';
-import { BROLL, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, ZOOM, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeStyle, sanitizeZoom, sourceText, suggestZoomPoints, wordNear, wordsForExtracts, zoomPlan } from './studio-core.js';
+import { DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeStyle, sanitizeZoom, sourceText, wordsForExtracts } from './studio-core.js';
 import { createPhone, el, outlineShadow, rgba } from './studio-preview.js';
 import { fmtDate } from './ui.js';
 
@@ -179,7 +179,7 @@ const savePrefs = (S) => {
     clearTimeout(prefsTimer);
     prefsTimer = 0;
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ style: S.style, music: S.music, voice: S.voice, layout: { fit: S.layout.fit, quality: S.layout.quality, mirror: S.layout.mirror }, step: S.step, zoom: { strength: S.zoom.strength, focus: S.zoom.focus }, endCard: { on: S.endCard.on, dur: S.endCard.dur, design: S.endCard.design } }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ style: S.style, music: S.music, voice: S.voice, layout: { fit: S.layout.fit, quality: S.layout.quality, mirror: S.layout.mirror }, step: S.step, endCard: { on: S.endCard.on, dur: S.endCard.dur, design: S.endCard.design } }));
       S.onSaved?.();
     } catch {
       // stockage indisponible : sans importance
@@ -201,6 +201,33 @@ const fail = (node, e) => {
   node.textContent = e.message;
 };
 
+// ---------------------------------------------------------------------------------------- étapes
+
+const STEP_LABELS = ['Interview', 'Extrait', 'Sous-titres', 'Musique', 'Format', 'Écran de fin', 'Créer'];
+
+/**
+ * Barre des étapes (1 interview, 2 extrait, 3 sous-titres…). `go(n)` est appelé pour une étape accessible ;
+ * `sync(courante, accessible)` met à jour : étapes faites (✓), étape en cours, étapes encore fermées.
+ */
+function createSteps(go) {
+  const buttons = STEP_LABELS.map((label, i) =>
+    el('button', { type: 'button', class: 'st-step', onclick: () => go(i + 1) }, el('span', { class: 'st-step-n', 'aria-hidden': 'true' }, String(i + 1)), el('span', { class: 'st-step-l' }, label)));
+  const list = el('ol', { class: 'st-steps', 'aria-label': 'Étapes de création' }, buttons.map((b) => el('li', {}, b)));
+  function sync(current, canGo = () => true) {
+    buttons.forEach((b, i) => {
+      const n = i + 1;
+      b.classList.toggle('done', n < current);
+      b.classList.toggle('current', n === current);
+      if (n === current) b.setAttribute('aria-current', 'step');
+      else b.removeAttribute('aria-current');
+      b.disabled = n !== current && !canGo(n);
+      b.firstChild.textContent = n < current ? '✓' : String(n);
+      b.setAttribute('aria-label', `Étape ${n} sur ${STEP_LABELS.length} : ${STEP_LABELS[i]}${n < current ? ' (faite)' : n === current ? ' (en cours)' : ''}`);
+    });
+  }
+  return { root: list, sync };
+}
+
 // ---------------------------------------------------------------------------------------- liste des interviews
 
 async function showList() {
@@ -209,8 +236,11 @@ async function showList() {
     put(root, el('section', { class: 'card st-empty' }, el('h2', {}, 'Le studio arrive bientôt'), el('p', {}, 'Aucune interview n’est encore disponible dans le studio. Reviens bientôt !')));
     return;
   }
+  const steps = createSteps(() => {});
+  steps.sync(1, () => false); // les étapes suivantes s'ouvrent une fois l'interview choisie
   put(root,
-    el('section', { class: 'card st-pick' }, el('p', { class: 'eyebrow' }, 'Étape 1'), el('h2', { class: 'section-title' }, 'Choisis une interview'),
+    el('section', { class: 'card st-stepcard' }, steps.root),
+    el('section', { class: 'card st-pick' }, el('p', { class: 'eyebrow' }, `Étape 1 sur ${STEP_LABELS.length}`), el('h2', { class: 'section-title' }, 'Choisis ton interview'),
       el('div', { class: 'st-list' }, videos.map((v) =>
         el('a', { class: 'st-video', href: `/?v=${v.youtube_id}` },
           v.thumbnail_url ? el('img', { src: v.thumbnail_url, alt: '', loading: 'lazy' }) : el('span', { class: 'thumb-empty', 'aria-hidden': 'true' }, '▶'),
@@ -244,9 +274,7 @@ async function openEditor(youtubeId) {
     voice: Number.isFinite(prefs.voice) ? prefs.voice : 1,
     layout: { fit: prefs.layout?.fit === 'crop' ? 'crop' : 'blur', cropX: 0.5, quality: prefs.layout?.quality === 'fast' ? 'fast' : 'hd', mirror: prefs.layout?.mirror === true, follow: { on: false, subject: detail.faces?.identified ? 'lisnard' : 'auto' } }, // follow : le cadre suit le visage (plein écran) ; décoché au départ, c'est le visiteur qui le demande ; « lisnard » : la personne de référence quand elle est reconnue
     framing: { ready: detail.faces?.ready === true, identified: detail.faces?.identified === true, segments: null, faces: 0, coverage: 0, crowded: 0, recognized: 0, reason: null, missing: 0, loading: false }, // cadrage automatique : trajectoire reçue du serveur
-    zoom: { on: false, auto: true, ...sanitizeZoom({ strength: prefs.zoom?.strength, focus: prefs.zoom?.focus }), events: [], picking: false }, // zooms : événements { t, kind } en secondes du clip
-    broll: [], // images : { id, start, dur, thumb, photographer, page, alt }
-    stock: { q: '', photos: [], page: 0, next: false, busy: false, error: '' },
+    zoom: { on: false, auto: true, ...sanitizeZoom({}), events: [] }, // plus d'étape « Images & zooms » : toujours éteint (le champ reste pour les modèles enregistrés avant)
     ticket: 0,
     edits: new Map(), // corrections de texte : début de la ligne (ms) -> { orig, text }
     endCard: { ...endCardSettings(prefs.endCard), on: false },
@@ -282,8 +310,6 @@ async function openEditor(youtubeId) {
         localStorage.setItem(draftKey, JSON.stringify({
           v: 1, extracts: S.extracts, style: S.style, music: S.music, voice: S.voice, jobId: S.jobId ?? null, delivered: S.delivered === true, remixOf: S.remixOf ?? null,
           layout: { fit: S.layout.fit, cropX: S.layout.cropX, quality: S.layout.quality, mirror: S.layout.mirror, follow: { on: S.layout.follow.on, subject: S.layout.follow.subject } },
-          zoom: { on: S.zoom.on, auto: S.zoom.auto, strength: S.zoom.strength, focus: S.zoom.focus, events: S.zoom.events },
-          broll: S.broll,
           endCard: S.endCard,
         }));
       }
@@ -332,9 +358,6 @@ async function openEditor(youtubeId) {
     S.layout.mirror = l.mirror === true;
     S.layout.follow.on = l.follow?.on === true && S.framing.ready;
     if (['lisnard', 'auto', 'left', 'right'].includes(l.follow?.subject) && (l.follow.subject !== 'lisnard' || S.framing.identified)) S.layout.follow.subject = l.follow.subject;
-    S.zoom = { ...S.zoom, ...sanitizeZoom(d.zoom, total), on: d.zoom?.on === true, auto: d.zoom?.auto !== false };
-    S.broll = (Array.isArray(d.broll) ? d.broll : []).filter((b) => typeof b?.id === 'string' && Number.isFinite(b.start) && Number.isFinite(b.dur) && typeof b.thumb === 'string').slice(0, BROLL.maxItems)
-      .map((b) => ({ id: b.id, start: b.start, dur: b.dur, thumb: b.thumb, photographer: b.photographer, page: b.page, alt: b.alt }));
     if (d.endCard) S.endCard = endCardSettings(d.endCard);
     S.jobId = typeof d.jobId === 'string' ? d.jobId : null;
     S.delivered = d.delivered === true;
@@ -387,11 +410,6 @@ async function openEditor(youtubeId) {
   let cropSlider = null; // curseur « position du cadrage » de l'onglet Cadrage, tenu à jour quand on glisse la vidéo
   const phone = createPhone({
     onMove: ({ x, y }) => setStyle({ x, y }),
-    onPick: (focus) => {
-      S.zoom.focus = focus;
-      savePrefs(S);
-      renderEffects();
-    },
     onCrop: (cropX) => {
       S.layout.cropX = cropX;
       if (cropSlider) cropSlider.value = String(Math.round(cropX * 100));
@@ -493,11 +511,11 @@ async function openEditor(youtubeId) {
   }
   function extractsChanged(fine = false) {
     rebuildSubtitles();
-    keepEffectsInClip();
     renderExtracts();
     renderTextEditor();
     schedulePreview(fine ? 1400 : 450);
     renderCreateSummary();
+    syncNav();
     scheduleDraft();
   }
   const note = el('p', { class: 'st-msg' });
@@ -1107,13 +1125,11 @@ async function openEditor(youtubeId) {
 
   function renderCreateSummary() {
     const track = assets.music.find((m) => m.id === S.music.id);
-    const zoomsIn = S.zoom.events.filter((e) => e.kind === 'in').length;
     put(createSummary, el('ul', { class: 'st-sum' },
       el('li', {}, el('strong', {}, 'Durée : '), S.extracts.length ? `${secs(totalS())} (${S.extracts.length} extrait${S.extracts.length > 1 ? 's' : ''})` : 'aucun extrait choisi'),
       el('li', {}, el('strong', {}, 'Sous-titres : '), `${PRESETS[S.style.preset].label}, ${fontById.get(S.style.font).label}`),
       el('li', {}, el('strong', {}, 'Musique : '), track ? track.title : 'aucune'),
       editedInClip() ? el('li', {}, el('strong', {}, 'Texte : '), `${editedInClip()} ligne${editedInClip() > 1 ? 's' : ''} de sous-titres corrigée${editedInClip() > 1 ? 's' : ''}`) : null,
-      (S.zoom.on && zoomsIn) || S.broll.length ? el('li', {}, el('strong', {}, 'Images & zooms : '), [S.zoom.on && zoomsIn ? `${zoomsIn} zoom${zoomsIn > 1 ? 's' : ''}` : '', S.broll.length ? `${S.broll.length} image${S.broll.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ')) : null,
       S.endCard.on ? el('li', {}, el('strong', {}, 'Écran de fin : '), `${S.endCard.dur} s`) : null,
       S.logo.on && S.logo.dataUrl ? el('li', {}, el('strong', {}, 'Logo : '), POS_LABELS[S.logo.pos].toLowerCase()) : null,
       el('li', {}, el('strong', {}, 'Format : '), `${S.layout.fit === 'blur' ? 'vidéo entière sur fond flou' : following() ? 'plein écran, suit le visage' : 'plein écran'}${S.layout.mirror ? ', en miroir' : ''}`)));
@@ -1532,8 +1548,6 @@ async function openEditor(youtubeId) {
         style: S.style,
         music: S.music.id ? S.music : null,
         voice: S.voice,
-        zoom: S.zoom.on && S.zoom.events.length ? { strength: S.zoom.strength, focus: S.zoom.focus, events: S.zoom.events } : null,
-        broll: S.broll.map(({ id, start, dur }) => ({ id, start, dur })),
         edits: Object.fromEntries(clipLines().filter((r) => S.edits.has(r.line.start_ms)).map((r) => [r.line.start_ms, S.edits.get(r.line.start_ms).text])),
         end_card: await endCardPayload(),
         logo: await logoPayload(),
@@ -1554,141 +1568,16 @@ async function openEditor(youtubeId) {
   };
   addEventListener('beforeunload', beforeUnload);
 
-  // ============================================================ onglet B-roll (zooms et images)
-  const panelFx = el('div', { class: 'st-panel' });
-  const fxNote = el('p', { class: 'st-msg' });
-  let fxTimer = 0;
-  const fxAlert = (msg) => {
-    fxNote.className = 'st-msg err';
-    fxNote.textContent = msg;
-    toast(msg, true);
-    clearTimeout(fxTimer);
-    fxTimer = setTimeout(() => (fxNote.textContent = ''), 4500);
-  };
-  const playhead = () => Math.round((phone.video.currentTime || 0) * 100) / 100;
-  const tMs = (t) => Math.round(t * 1000);
-
-  /** Envoie zooms et images à l'aperçu. */
-  function pushFx() {
-    phone.setEffects({
-      plan: S.zoom.on ? zoomPlan(S.zoom.events, S.zoom.strength) : [],
-      focus: S.zoom.focus,
-      picking: S.zoom.picking,
-      broll: S.broll.map((b) => ({ start: b.start, dur: b.dur, url: `/api/studio/stock/image/${b.id}` })),
-    });
-  }
-  function effectsChanged() {
-    S.zoom.events = sanitizeZoom({ ...S.zoom, events: S.zoom.events }).events;
-    pushFx();
-    renderEffects();
-    updateSource();
-    renderCreateSummary();
-    scheduleDraft();
-  }
-  /** Zooms automatiques sur les mots importants du clip. */
-  function autoZoom() {
-    S.zoom.events = suggestZoomPoints(clipWords(), totalS()).events;
-    S.zoom.auto = true;
-  }
-  /** Le clip a changé : les zooms automatiques sont recalculés, les réglages manuels et les images sont gardés tant qu'ils restent dans le clip. */
-  function keepEffectsInClip() {
-    const total = totalS();
-    if (S.zoom.on && S.zoom.auto) autoZoom();
-    else S.zoom.events = S.zoom.events.filter((e) => e.t <= total);
-    S.broll = S.broll.filter((b) => b.start < total - 0.5).map((b) => ({ ...b, dur: Math.min(b.dur, Math.round((total - b.start) * 100) / 100) }));
-    pushFx();
-    renderEffects();
-    updateSource();
-  }
-  const setZoomEvents = (events, manual = true) => {
-    S.zoom.events = events;
-    if (manual) S.zoom.auto = false;
-    effectsChanged();
-  };
-  function addZoom(kind) {
-    const t = Math.min(totalS() - 0.1, playhead());
-    if (!S.extracts.length) return fxAlert('Ajoute d’abord un extrait.');
-    if (S.zoom.events.some((e) => Math.abs(e.t - t) < ZOOM.minGap)) return fxAlert(`Trop près d’un autre zoom (${String(ZOOM.minGap).replace('.', ',')} s au minimum).`);
-    if (S.zoom.events.length >= ZOOM.maxEvents) return fxAlert(`${ZOOM.maxEvents} zooms au maximum.`);
-    S.zoom.on = true;
-    setZoomEvents([...S.zoom.events, { t, kind }].sort((a, b) => a.t - b.t));
-    toast(`Zoom ${kind === 'in' ? 'avant' : 'arrière'} ajouté à ${secs(t)}.`);
-  }
-
-  // --- images libres de droits
-  let stockTicket = 0;
-  async function searchStock(more = false) {
-    const st = S.stock;
-    const q = st.q.trim();
-    // A new word replaces a running search; only "more images" waits for it
-    if (q.length < 2 || (more && st.busy)) return;
-    const mine = ++stockTicket;
-    st.busy = true;
-    st.error = '';
-    renderEffects();
-    try {
-      const page = more ? st.page + 1 : 1;
-      const r = await api('GET', `/stock/search?${new URLSearchParams({ q, page })}`);
-      if (mine !== stockTicket) return;
-      st.photos = more ? [...st.photos, ...r.photos] : r.photos;
-      st.page = r.page;
-      st.next = r.next;
-      if (!r.photos.length && !more) st.error = 'Aucune image trouvée : essaie un autre mot.';
-    } catch (e) {
-      if (mine !== stockTicket) return;
-      st.error = e.message;
-    }
-    st.busy = false;
-    renderEffects();
-  }
-  /** Première place libre (au moins `dur` secondes) à partir de `from`. */
-  function freeSlot(from, dur, ignore = null) {
-    const total = totalS();
-    const items = S.broll.filter((b) => b !== ignore).sort((a, b) => a.start - b.start);
-    let start = Math.max(0, from);
-    for (const b of items) {
-      if (start + dur <= b.start + 1e-9) break;
-      if (start < b.start + b.dur) start = b.start + b.dur;
-    }
-    return start + dur <= total + 1e-9 ? Math.round(start * 100) / 100 : null;
-  }
-  function addBroll(photo) {
-    const total = totalS();
-    if (!S.extracts.length) return fxAlert('Ajoute d’abord un extrait.');
-    if (S.broll.length >= BROLL.maxItems) return fxAlert(`${BROLL.maxItems} images au maximum.`);
-    const at = Math.min(playhead(), Math.max(0, total - BROLL.minS));
-    const dur = Math.min(BROLL.defaultS, total - at);
-    const start = freeSlot(at, dur) ?? freeSlot(0, Math.min(BROLL.defaultS, total));
-    if (start == null) return fxAlert('Il n’y a plus de place pour une image dans ce clip.');
-    S.broll.push({ id: photo.id, start, dur: Math.min(BROLL.defaultS, total - start), thumb: photo.thumb, photographer: photo.photographer, page: photo.page, alt: photo.alt });
-    S.broll.sort((a, b) => a.start - b.start);
-    effectsChanged();
-    phone.seek(start);
-    toast(`Image ajoutée à ${secs(start)} (voir « Images du clip » plus bas).`);
-  }
-  function updateBroll(b, patch) {
-    const next = { ...b, ...patch };
-    const total = totalS();
-    next.start = Math.round(next.start * 100) / 100;
-    next.dur = Math.round(Math.min(BROLL.maxS, Math.max(BROLL.minS, next.dur)) * 100) / 100;
-    if (next.start < 0 || next.start + next.dur > total + 1e-9) return fxAlert(`L’image doit rester dans le clip (${secs(total)}).`);
-    if (S.broll.some((o) => o !== b && next.start < o.start + o.dur && o.start < next.start + next.dur)) return fxAlert('Deux images ne peuvent pas se chevaucher.');
-    Object.assign(b, next);
-    S.broll.sort((x, y) => x.start - y.start);
-    effectsChanged();
-  }
-  /** Description à copier : légende de l'extrait choisi (générée avec les extraits), puis la source de l'interview et les crédits des images. */
+  /** Description à copier : légende de l'extrait choisi (générée avec les extraits), puis la source de l'interview et les crédits de la musique. */
   function updateSource() {
     captionHelp.textContent = S.extracts.some((e) => e.caption)
       ? 'Légende TikTok prête à l’emploi (accroche et hashtags proposés avec l’extrait), suivie de la source de l’interview, que la vidéo n’affiche pas. Tu peux la modifier.'
       : 'Source de l’interview à coller dans ta description, car la vidéo ne l’affiche pas. Ajoute ton accroche et tes hashtags.';
     if (captionEdited) return;
-    const credits = [...new Set(S.broll.map((b) => b.photographer).filter(Boolean))];
     const caption = S.extracts.find((e) => e.caption)?.caption ?? '';
     const song = assets.music.find((m) => m.id === S.music.id);
     const source =
       `${sourceText(S.video.title, S.video.published_at)} — https://www.youtube.com/watch?v=${S.video.youtube_id}` +
-      (credits.length ? `\nImages : ${credits.join(', ')} (${assets.stock?.provider ?? 'banque d’images'})` : '') +
       (song?.credit ? `\nMusique : ${song.title} — ${song.credit}` : '');
     sourceField.value = fitDescription(caption, source);
     countSource();
@@ -1696,135 +1585,66 @@ async function openEditor(youtubeId) {
     sourceField.rows = Math.min(12, Math.max(3, wrapped + 1));
   }
 
-  const timeField = (label, ms, onSet, extra = {}) => {
-    const input = el('input', { class: 'st-time', type: 'text', inputmode: 'text', autocomplete: 'off', value: fmtT(ms), 'aria-label': label, title: 'Tu peux taper un instant : 0:12,5', ...extra });
-    input.addEventListener('change', () => {
-      const v = parseT(input.value);
-      if (v == null) { input.value = fmtT(ms); return fxAlert('Instant illisible : écris par exemple 0:12,5 ou 12,5.'); }
-      onSet(v / 1000);
-    });
-    return input;
-  };
-
-  function renderEffects() {
-    if (panelFx.hidden) return;
-    const total = totalS();
-    const words = clipWords();
-    const strengthChips = el('div', { class: 'seg st-stepchips', role: 'group', 'aria-label': 'Force du zoom' },
-      [['light', 'Léger'], ['medium', 'Moyen'], ['strong', 'Fort']].map(([k, label]) =>
-        el('button', { type: 'button', 'aria-pressed': String(S.zoom.strength === ZOOM.strengths[k]), onclick: () => { S.zoom.strength = ZOOM.strengths[k]; savePrefs(S); effectsChanged(); } }, label)));
-    const zoomRows = S.zoom.events.map((e, i) =>
-      el('li', { class: 'st-fxrow' },
-        timeField(`Instant du zoom ${i + 1}`, tMs(e.t), (t) => {
-          if (t > total) return fxAlert('Cet instant est après la fin du clip.');
-          if (S.zoom.events.some((o, j) => j !== i && Math.abs(o.t - t) < ZOOM.minGap)) return fxAlert('Trop près d’un autre zoom.');
-          const events = S.zoom.events.map((o, j) => (j === i ? { ...o, t } : o)).sort((a, b) => a.t - b.t);
-          setZoomEvents(events);
-        }),
-        el('select', { class: 'st-select', 'aria-label': `Type du zoom ${i + 1}`, onchange: (ev) => setZoomEvents(S.zoom.events.map((o, j) => (j === i ? { ...o, kind: ev.target.value } : o))) },
-          el('option', { value: 'in', selected: e.kind === 'in' }, 'Zoom avant'), el('option', { value: 'out', selected: e.kind === 'out' }, 'Zoom arrière')),
-        el('span', { class: 'st-fxword' }, e.kind === 'in' ? wordNear(words, e.t + 0.15) : ''),
-        el('button', { type: 'button', class: 'st-mini', title: 'Voir ce moment', 'aria-label': 'Voir ce moment', onclick: () => phone.seek(Math.max(0, e.t - 0.6), true) }, '▶'),
-        el('button', { type: 'button', class: 'st-mini', title: 'Supprimer ce zoom', 'aria-label': 'Supprimer ce zoom', onclick: () => setZoomEvents(S.zoom.events.filter((_, j) => j !== i)) }, '×')));
-
-    const stockOn = assets.stock?.enabled;
-    const hints = suggestZoomPoints(words, total, { minSep: 0.01, max: 6 }).hints.map((h) => h.word).filter((w, i, a) => w && a.indexOf(w) === i);
-    const searchInput = el('input', { type: 'search', class: 'st-search', placeholder: 'Chercher une image (ex. mairie, argent, école)…', 'aria-label': 'Chercher une image', value: S.stock.q });
-    searchInput.addEventListener('input', () => { S.stock.q = searchInput.value; });
-    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchStock(); } });
-    const brollRows = S.broll.map((b, i) =>
-      el('li', { class: 'st-fxrow broll' },
-        el('img', { class: 'st-bthumb', src: b.thumb, alt: b.alt || 'Image', loading: 'lazy' }),
-        el('div', { class: 'st-bfields' },
-          el('label', {}, 'Début', timeField(`Début de l’image ${i + 1}`, tMs(b.start), (t) => updateBroll(b, { start: t }))),
-          el('label', {}, 'Durée', timeField(`Durée de l’image ${i + 1}`, tMs(b.dur), (t) => updateBroll(b, { dur: t }), { title: 'Durée en secondes : 2,5' }))),
-        el('button', { type: 'button', class: 'st-mini', title: 'Voir cette image', 'aria-label': 'Voir cette image', onclick: () => phone.seek(Math.max(0, b.start - 0.4), true) }, '▶'),
-        el('button', { type: 'button', class: 'st-mini', title: 'Retirer cette image', 'aria-label': 'Retirer cette image', onclick: () => { S.broll = S.broll.filter((o) => o !== b); effectsChanged(); } }, '×')));
-
-    putKeep(panelFx, ...[
-      el('h3', {}, 'Zooms'),
-      el('label', { class: 'st-check' }, el('input', { type: 'checkbox', checked: S.zoom.on, onchange: (e) => { S.zoom.on = e.target.checked; if (S.zoom.on && !S.zoom.events.length) autoZoom(); effectsChanged(); } }), 'Zooms sur les mots importants'),
-      el('p', { class: 'st-help' }, 'Un zoom avant au moment d’un mot important, puis un zoom arrière. Le mouvement est lissé image par image : jamais de saccade. Les sous-titres et les images ne bougent pas.'),
-      ...(S.zoom.on
-        ? [
-            el('div', { class: 'st-row' }, el('label', {}, 'Force'), el('div', { class: 'st-row-ctl' }, strengthChips)),
-            el('div', { class: 'st-fxbar' },
-              el('button', { type: 'button', class: 'btn small', onclick: () => { if (!S.extracts.length) return fxAlert('Ajoute d’abord un extrait.'); autoZoom(); effectsChanged(); } }, 'Placer automatiquement'),
-              el('button', { type: 'button', class: 'btn secondary small', onclick: () => addZoom('in') }, 'Zoom avant ici'),
-              el('button', { type: 'button', class: 'btn secondary small', onclick: () => addZoom('out') }, 'Zoom arrière ici')),
-            el('p', { class: 'st-help' }, '« Ici » = l’instant où se trouve l’aperçu : mets l’aperçu en pause au bon endroit (curseur sous la vidéo), puis choisis.'),
-            el('div', { class: 'st-fxbar' },
-              el('button', { type: 'button', class: S.zoom.picking ? 'btn small' : 'btn secondary small', onclick: () => { S.zoom.picking = !S.zoom.picking; pushFx(); renderEffects(); } }, S.zoom.picking ? 'Terminé' : 'Choisir le point de zoom'),
-              el('span', { class: 'st-help inline' }, `Point de zoom : ${Math.round(S.zoom.focus.x * 100)} % à droite, ${Math.round(S.zoom.focus.y * 100)} % en bas`),
-              el('button', { type: 'button', class: 'st-link', onclick: () => { S.zoom.focus = { ...ZOOM.focus }; savePrefs(S); effectsChanged(); } }, 'Réinitialiser')),
-            zoomRows.length ? el('ol', { class: 'st-fxlist' }, zoomRows) : el('p', { class: 'st-help' }, 'Aucun zoom : « Placer automatiquement » ou ajoute-en à la main.'),
-          ]
-        : []),
-      el('h3', {}, 'Images'),
-      el('p', { class: 'st-help' }, 'Une image plein écran par-dessus la vidéo pendant que la voix continue, avec un très léger zoom lent. Images libres de droits.'),
-      ...(stockOn
-        ? [
-            el('div', { class: 'st-searchbar' }, searchInput, el('button', { type: 'button', class: 'btn small', disabled: S.stock.busy, onclick: () => searchStock() }, S.stock.busy ? 'Recherche…' : 'Chercher')),
-            hints.length ? el('div', { class: 'st-chips' }, el('small', {}, 'Mots du clip :'), hints.map((w) => el('button', { type: 'button', class: 'st-chip', onclick: () => { S.stock.q = w; searchStock(); } }, w))) : null,
-            S.stock.error ? el('p', { class: 'st-msg err' }, S.stock.error) : null,
-            S.stock.photos.length
-              ? el('div', { class: 'st-photos' }, S.stock.photos.map((p) =>
-                  el('button', { type: 'button', class: 'st-photo', title: `Ajouter à l’instant de l’aperçu — ${p.photographer} / ${assets.stock.provider}`, style: { background: p.color }, onclick: () => addBroll(p) },
-                    el('img', { src: p.thumb, alt: p.alt || 'Image', loading: 'lazy' }))))
-              : null,
-            S.stock.next ? el('button', { type: 'button', class: 'btn secondary small', disabled: S.stock.busy, onclick: () => searchStock(true) }, 'Plus d’images') : null,
-            S.stock.photos.length ? el('p', { class: 'st-help' }, `Touche une image pour l’ajouter à l’instant où se trouve l’aperçu. Images ${assets.stock.provider} : les crédits sont ajoutés au texte « Source à citer ».`) : null,
-            brollRows.length ? el('h4', {}, `Images du clip (${brollRows.length}/${BROLL.maxItems})`) : null,
-            brollRows.length ? el('ul', { class: 'st-fxlist' }, brollRows) : null,
-          ]
-        : [el('p', { class: 'st-help' }, 'La recherche d’images n’est pas disponible pour le moment.')]),
-      fxNote,
-    ].filter(Boolean));
-  }
-
-  // ============================================================ mise en page
-  const tabs = [['extraits', 'Extraits', panelExtracts], ['style', 'Sous-titres', panelStyle], ['musique', 'Musique', panelMusic], ['fx', 'Images & zooms', panelFx], ['cadrage', 'Format', panelFrame], ['fin', 'Écran de fin', panelEnd], ['creer', 'Créer', panelCreate]];
-  const tabBar = el('div', { class: 'st-tabs', role: 'tablist', 'aria-label': 'Étapes de création' });
+  // ============================================================ mise en page : une étape à la fois
+  // étape 1 = choix de l'interview (page d'accueil du studio) ; les suivantes sont les panneaux ci-dessous, dans l'ordre
+  const STEPS = [
+    ['extraits', 'Choisis ton extrait', 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.', panelExtracts],
+    ['style', 'Choisis tes sous-titres', 'Le style, la police, les couleurs et la position. Tu peux aussi corriger le texte.', panelStyle],
+    ['musique', 'Ajoute de la musique', 'Facultatif : un fond sonore discret sous la voix.', panelMusic],
+    ['cadrage', 'Choisis le format', 'Comment la vidéo remplit l’écran vertical, et ton logo.', panelFrame],
+    ['fin', 'Termine sur un écran de fin', 'Facultatif : un visuel de quelques secondes ajouté après le clip.', panelEnd],
+    ['creer', 'Crée ta vidéo', 'Vérifie le résumé, puis lance la création.', panelCreate],
+  ];
+  const stepIds = STEPS.map(([id]) => id);
   const stage = el('div', { class: 'st-stage card' });
+  const steps = createSteps((n) => (n === 1 ? (location.href = '/') : openTab(stepIds[n - 2], true)));
+  const stepEyebrow = el('p', { class: 'eyebrow' });
+  const stepTitle = el('h2', { class: 'st-step-title', tabindex: '-1' });
+  const stepHint = el('p', { class: 'st-help' });
+  const stepHead = el('header', { class: 'st-stephead' }, stepEyebrow, stepTitle, stepHint);
+  const prevBtn = el('button', { class: 'btn secondary st-prev', type: 'button' });
   const nextBtn = el('button', { class: 'btn st-next', type: 'button' });
-  const nextBar = el('div', { class: 'st-nextbar' }, nextBtn);
-  const tabIds = tabs.map(([id]) => id);
+  const nextNote = el('p', { class: 'st-help st-next-note', role: 'status' });
+  const nextBar = el('div', { class: 'st-nextbar' }, prevBtn, nextBtn, nextNote);
+  const stepOf = () => stepIds.indexOf(root.dataset.tab);
+  /** Boutons Retour / Suivant et barre des étapes : sans extrait choisi, on ne va pas plus loin que l'étape « Extrait ». */
+  function syncNav() {
+    const i = stepOf();
+    if (i < 0) return;
+    const ready = S.extracts.length > 0;
+    steps.sync(i + 2, (n) => n === 1 || ready);
+    const next = STEPS[i + 1];
+    nextBtn.hidden = !next;
+    nextBtn.disabled = !ready;
+    nextBtn.textContent = next ? `Étape suivante : ${STEP_LABELS[i + 2]} →` : '';
+    nextNote.textContent = !ready && next ? 'Choisis d’abord un extrait pour continuer.' : '';
+    prevBtn.textContent = i === 0 ? '← Changer d’interview' : '← Retour';
+  }
   function openTab(id, focus = false) {
-    tabs.forEach(([tid, , panel]) => (panel.hidden = tid !== id));
+    STEPS.forEach(([sid, , , panel]) => (panel.hidden = sid !== id));
     root.dataset.tab = id;
-    tabBar.querySelectorAll('[role="tab"]').forEach((b) => {
-      const on = b.dataset.tab === id;
-      b.setAttribute('aria-selected', String(on));
-      b.tabIndex = on ? 0 : -1;
-      if (on && focus) b.focus();
-    });
-    const next = tabs[tabIds.indexOf(id) + 1];
-    nextBar.hidden = !next;
-    if (next) nextBtn.textContent = `Étape suivante : ${next[1]} →`;
+    const i = stepIds.indexOf(id);
+    stepEyebrow.textContent = `Étape ${i + 2} sur ${STEPS.length + 1}`;
+    stepTitle.textContent = STEPS[i][1];
+    stepHint.textContent = STEPS[i][2];
+    modelsBar.hidden = id === 'extraits'; // les modèles enregistrent les réglages d'habillage : rien à faire avant l'extrait
+    syncNav();
     if (id !== 'musique' && auditionId) { audition.pause(); auditionId = null; renderMusic(); }
     if (id === 'creer') renderCreateSummary();
     if (id === 'fin') renderEnd();
-    if (id === 'fx') renderEffects();
-    if (id !== 'fx' && S.zoom.picking) { S.zoom.picking = false; pushFx(); } // on ne reste pas bloqué en choix du point de zoom
+    if (focus) {
+      stepTitle.focus({ preventScroll: true });
+      steps.root.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }
   }
-  tabs.forEach(([id, label, panel]) => {
+  STEPS.forEach(([id, , , panel]) => {
     panel.id = `st-p-${id}`;
-    panel.setAttribute('role', 'tabpanel');
-    panel.setAttribute('aria-labelledby', `st-t-${id}`);
-    tabBar.append(el('button', { type: 'button', role: 'tab', id: `st-t-${id}`, 'aria-controls': panel.id, 'data-tab': id, onclick: () => openTab(id) }, label));
+    panel.setAttribute('role', 'region');
+    panel.setAttribute('aria-labelledby', 'st-step-title');
   });
-  tabBar.addEventListener('keydown', (e) => {
-    const i = tabIds.indexOf(document.activeElement?.dataset?.tab);
-    if (i < 0) return;
-    const to = { ArrowRight: (i + 1) % tabIds.length, ArrowLeft: (i + tabIds.length - 1) % tabIds.length, Home: 0, End: tabIds.length - 1 }[e.key];
-    if (to === undefined) return;
-    e.preventDefault();
-    openTab(tabIds[to], true);
-  });
-  nextBtn.addEventListener('click', () => {
-    openTab(tabIds[tabIds.indexOf(root.dataset.tab) + 1], true);
-    tabBar.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  });
+  stepTitle.id = 'st-step-title';
+  prevBtn.addEventListener('click', () => (stepOf() === 0 ? (location.href = '/') : openTab(stepIds[stepOf() - 1], true)));
+  nextBtn.addEventListener('click', () => openTab(stepIds[stepOf() + 1], true));
   const modelsBar = el('div', { class: 'st-models' });
   let undoModel = null;
   const readModels = () => {
@@ -1849,9 +1669,7 @@ async function openEditor(youtubeId) {
     S.music = { id: m.music.id, volume: m.music.volume };
     S.voice = m.voice;
     S.layout = { ...S.layout, fit: m.layout.fit, quality: m.layout.quality, mirror: m.layout.mirror, follow: { ...m.layout.follow } };
-    S.zoom = { ...S.zoom, on: m.zoom.on, auto: m.zoom.auto, strength: m.zoom.strength, focus: m.zoom.focus };
     S.endCard = { ...m.endCard };
-    if (S.zoom.on && !S.zoom.events.length && S.extracts.length) autoZoom();
     renderPresets();
     renderFonts();
     syncStyleControls();
@@ -1860,8 +1678,6 @@ async function openEditor(youtubeId) {
     applyAudio();
     renderFrame();
     pushFraming();
-    renderEffects();
-    pushFx();
     renderCreate();
     renderEnd();
     savePrefs(S);
@@ -1914,13 +1730,13 @@ async function openEditor(youtubeId) {
       el('span', { class: 'st-models-label' }, 'Modèles'),
       list.length ? pick : null,
       tools,
-      el('button', { type: 'button', class: 'st-link', title: 'Style, musique, format, zooms et écran de fin (pas les extraits)', onclick: saveModel }, '+ Enregistrer mes réglages'),
+      el('button', { type: 'button', class: 'st-link', title: 'Style, musique, format et écran de fin (pas les extraits)', onclick: saveModel }, '+ Enregistrer mes réglages'),
       undoModel ? el('button', { type: 'button', class: 'st-link', onclick: () => { const back = undoModel; undoModel = null; applySettings(back); renderModels(); toast('Réglages précédents rétablis.'); } }, 'Annuler le modèle') : null,
       el('span', { class: 'st-help inline st-models-hint' }, 'Gardés dans ce navigateur'),
     );
   }
 
-  stage.append(modelsBar, tabBar, ...tabs.map(([, , p]) => p), nextBar);
+  stage.append(steps.root, stepHead, modelsBar, ...STEPS.map(([, , , p]) => p), nextBar);
   renderModels();
 
   // « ← Autres interviews » et le titre vont dans l'en-tête bleu : un titre long sur deux ou trois lignes (téléphone) ne déborde plus

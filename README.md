@@ -1,7 +1,7 @@
 # Studio Lisnard
 
 **Plateforme dédiée à la création de TikTok / Reels** à partir d'extraits des interviews YouTube de David Lisnard : on choisit un extrait
-(proposé par l'IA ou libre), on ajoute des sous-titres, de la musique, des zooms et des images, puis on télécharge la vidéo verticale.
+(proposé par l'IA ou libre), on ajoute des sous-titres, de la musique, puis on télécharge la vidéo verticale.
 La page d'accueil (`/`) est le studio ; les anciennes adresses `/studio/`, `/videos/` et `/tendances/` y redirigent (301, la requête
 `?v=…` est conservée). Il n'y a plus de page publique de recherche, de liste de vidéos ni de tendances.
 
@@ -116,6 +116,10 @@ qu'à choisir les extraits.
 - **Studio public** (`/studio/`) : les visiteurs choisissent une interview dont l'admin a autorisé les clips, prennent un ou
   plusieurs extraits (jusqu'à 4, 90 s au total : les propositions de l'IA, ou un passage libre dans la transcription), ajustent le
   début et la fin **avec précision**, puis habillent le clip :
+  - **étapes** : le studio se fait une étape à la fois, avec une barre numérotée en haut (✓ pour les étapes faites) et des boutons
+    « Retour » / « Étape suivante » : 1 interview (page d'accueil du studio), 2 extrait, 3 sous-titres, 4 musique, 5 format (cadrage,
+    miroir, logo), 6 écran de fin, 7 créer. Sans extrait choisi, on ne peut pas dépasser l'étape 2. On peut revenir à n'importe quelle
+    étape déjà ouverte ; les modèles enregistrés (réglages d'habillage) s'affichent à partir de l'étape 3 ;
   - **réglage des bornes** : boutons − / + avec un pas au choix (0,1 s, 0,5 s par défaut, 1 s, 2 s, « Ligne » = jusqu'à la limite de ligne
     suivante, ou n'importe quelle durée de 0,01 à 30 s dans le champ libre) ; on peut aussi **taper l'instant exact** (`1:23,5`).
     Les bornes sont en millisecondes (arrondies au centième de seconde) ; une ligne coupée au milieu ne garde que les mots dits dans la
@@ -167,7 +171,7 @@ qu'à choisir les extraits.
   - **miroir** : retourne l'image gauche-droite. Il est appliqué après le cadrage et avant l'incrustation : les sous-titres
     ne sont jamais retournés (en revanche les textes visibles dans l'image le sont). Il ne change pas les droits sur la
     vidéo d'origine ;
-  - **b-roll** (onglet B-roll) :
+  - **b-roll** (zooms et images ; **retiré de l'interface** pour simplifier le studio : le serveur sait toujours les rendre si une demande en contient, mais plus aucun écran ne les propose) :
     - **zooms** sur les mots importants : un zoom avant juste avant chaque mot repéré (chiffres, mots longs ou rares, absolus comme
       « jamais », mots repris), un zoom arrière un peu après ; au plus un zoom tous les 6 s, jamais deux collés. « Placer
       automatiquement » les propose, et l'utilisateur les **choisit lui-même** : ajouter un zoom avant / arrière à l'instant de l'aperçu,
@@ -404,7 +408,7 @@ Deuxième section du site, `/mur/` : un mur des meilleurs TikToks publiés avec 
 ### Modèles et écran de fin
 
 - **Modèles** : barre « Modèles » en haut de l'éditeur. « Enregistrer mes réglages » garde sous un nom le style des sous-titres, la musique et
-  les volumes, le format (fond flou ou plein écran, qualité, miroir, suivi du visage), les réglages de zoom et l'écran de fin ; pas les extraits,
+  les volumes, le format (fond flou ou plein écran, qualité, miroir, suivi du visage) et l'écran de fin ; pas les extraits,
   les corrections ni les images, qui dépendent de l'interview. Jusqu'à 20 modèles, gardés **dans le navigateur** (`studio.models.v1`), rien sur
   le serveur. Appliquer un modèle peut être annulé ; une police ou une musique disparue est ignorée.
 - **Écran de fin** (onglet « Écran de fin », désactivé par défaut) : un visuel de 2 à 5 s (3 par défaut) ajouté **après** le clip, hors limite de 90 s, dans l'esprit
