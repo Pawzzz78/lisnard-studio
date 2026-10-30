@@ -2127,7 +2127,7 @@ async function renderEditor(id) {
         facesBox,
         h('h3', { class: 'clips-sub' }, 'Extraits proposés par l’IA'),
         sg?.outdated ? h('p', { class: 'status err' }, 'La transcription a changé depuis : régénère les extraits.') : null,
-        cards.length ? h('div', { class: 'clip-list' }, cards) : st.llm ? h('p', { class: 'status' }, 'Pas encore d’extraits.') : unavailable('la proposition d’extraits par l’IA n’est pas configurée.', 'OPENROUTER_API_KEY'),
+        cards.length ? h('div', { class: 'clip-list' }, cards) : st.llm ? h('p', { class: 'status' }, sg ? 'Aucun passage assez fort dans cette interview : l’IA n’en propose pas (note minimale de 7, salutations et remerciements écartés). Les visiteurs peuvent toujours choisir leur passage à la main dans la transcription.' : 'Pas encore d’extraits.') : unavailable('la proposition d’extraits par l’IA n’est pas configurée.', 'OPENROUTER_API_KEY'),
         h('div', { class: 'actions' }, suggestBtn),
         clipMsg,
       ),
