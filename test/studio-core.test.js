@@ -3,8 +3,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isStopWord } from '../public/js/stopwords.js';
 import {
+  BEGINNER_DEFAULTS,
   DEFAULT_STYLE,
+  FLOW,
+  LEVELS,
   PRESETS,
+  sanitizeLevel,
+  stepLabels,
+  stepsFor,
   activeAt,
   assColor,
   assEscape,
@@ -553,4 +559,27 @@ test('logo du compte : réglages validés et bornés', () => {
   assert.equal(sanitizeLogo({ image: 'abc' }), null);
   assert.deepEqual(sanitizeLogo({ image: 'a'.repeat(40) }), { image: 'a'.repeat(40), pos: 'tr', size: 0.18, opacity: 1 });
   assert.deepEqual(sanitizeLogo({ image: 'a'.repeat(40), pos: 'bc', size: 0.01, opacity: 0 }), { image: 'a'.repeat(40), pos: 'bc', size: 0.08, opacity: 0.3 });
+});
+
+// --- niveaux ---------------------------------------------------------------------------------------------
+
+test('niveaux : le parcours débutant est plus court, l\'avancé garde l\'écran de fin', () => {
+  assert.deepEqual(LEVELS, ['debutant', 'avance']);
+  assert.deepEqual(stepsFor('avance').map((s) => s.id), ['niveau', 'extraits', 'style', 'musique', 'cadrage', 'fin', 'creer']);
+  assert.deepEqual(stepsFor('debutant').map((s) => s.id), ['niveau', 'extraits', 'style', 'musique', 'cadrage', 'creer']);
+  // niveau pas encore choisi : le parcours simple
+  assert.deepEqual(stepsFor(null), stepsFor('debutant'));
+  assert.deepEqual(stepLabels('debutant'), ['Interview', 'Niveau', 'Extrait', 'Sous-titres', 'Musique', 'Format', 'Créer']);
+  assert.equal(stepLabels('avance').length, 8);
+  assert.equal(stepLabels('avance')[6], 'Écran de fin');
+  // le parcours avancé est le parcours complet : chaque étape y figure
+  assert.deepEqual(stepsFor('avance'), FLOW);
+});
+
+test('niveaux : valeur lue du navigateur nettoyée, réglages simples du débutant', () => {
+  assert.equal(sanitizeLevel('debutant'), 'debutant');
+  assert.equal(sanitizeLevel('avance'), 'avance');
+  for (const bad of [null, undefined, '', 'expert', 'AVANCE', 3, {}]) assert.equal(sanitizeLevel(bad), null);
+  // en débutant : ni miroir, ni logo, ni écran de fin, qualité HD, volumes par défaut
+  assert.deepEqual(BEGINNER_DEFAULTS, { mirror: false, logoOn: false, endCardOn: false, quality: 'hd', musicVolume: 0.25, voice: 1 });
 });

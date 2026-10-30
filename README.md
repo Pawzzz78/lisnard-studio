@@ -117,9 +117,19 @@ qu'à choisir les extraits.
   plusieurs extraits (jusqu'à 4, 90 s au total : les propositions de l'IA, ou un passage libre dans la transcription), ajustent le
   début et la fin **avec précision**, puis habillent le clip :
   - **étapes** : le studio se fait une étape à la fois, avec une barre numérotée en haut (✓ pour les étapes faites) et des boutons
-    « Retour » / « Étape suivante » : 1 interview (page d'accueil du studio), 2 extrait, 3 sous-titres, 4 musique, 5 format (cadrage,
-    miroir, logo), 6 écran de fin, 7 créer. Sans extrait choisi, on ne peut pas dépasser l'étape 2. On peut revenir à n'importe quelle
-    étape déjà ouverte ; les modèles enregistrés (réglages d'habillage) s'affichent à partir de l'étape 3 ;
+    « Retour » / « Étape suivante » : 1 interview (page d'accueil du studio), 2 niveau, 3 extrait, 4 sous-titres, 5 musique, 6 format
+    (cadrage), 7 écran de fin (niveau avancé seulement), 8 créer. Sans niveau choisi on ne passe pas l'étape 2 ; sans extrait, on ne passe
+    pas l'étape 3. On peut revenir à n'importe quelle étape déjà ouverte ; les modèles enregistrés (réglages d'habillage) s'affichent à
+    partir de l'étape « Sous-titres », en niveau avancé ;
+  - **niveaux** (`studio.level.v1` dans le navigateur, modifiable à tout moment par « Changer de niveau ») : **avancé** = tout ce qui est
+    décrit ici ; **débutant** = un parcours simple, plus court (7 étapes, sans écran de fin), en plus gros caractères, fait pour des
+    personnes peu à l'aise avec les sites : seulement les extraits proposés par l'IA (en grandes cartes, un seul bouton « Choisir cet
+    extrait » ; ni passage libre, ni recherche, ni réglage de bornes), seulement le **style** des sous-titres (ni police, couleurs, contour,
+    position ni correction du texte), la musique sans catégories ni volumes, le format sans logo ni miroir, et la création sans choix
+    de qualité (HD). Les outils masqués portent l'attribut `data-adv` (masqués en CSS dans `.studio[data-level="debutant"]`) ; leurs
+    réglages sont remis à des valeurs simples (`BEGINNER_DEFAULTS` dans `studio-core.js` : ni miroir, ni logo, ni écran de fin, HD,
+    musique à 25 %, voix à 100 %) et **rétablis** si la personne repasse en avancé (en mémoire : perdus si elle recharge la page entre
+    les deux). Un passage libre choisi en avancé reste affiché (« Ton passage actuel ») mais ne se modifie pas en débutant ;
   - **réglage des bornes** : boutons − / + avec un pas au choix (0,1 s, 0,5 s par défaut, 1 s, 2 s, « Ligne » = jusqu'à la limite de ligne
     suivante, ou n'importe quelle durée de 0,01 à 30 s dans le champ libre) ; on peut aussi **taper l'instant exact** (`1:23,5`).
     Les bornes sont en millisecondes (arrondies au centième de seconde) ; une ligne coupée au milieu ne garde que les mots dits dans la

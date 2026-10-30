@@ -15,6 +15,33 @@ export const OUT = { w: 1080, h: 1920 };
 export const LIMITS = { maxExtracts: 4, minExtractS: 3, maxTotalS: 90 };
 export const MODES = ['words', 'one', 'phrase', 'karaoke'];
 
+// --- niveaux : le parcours du studio selon l'aisance de la personne ------------------------------------------------------------------
+// « avance » est le parcours complet ; « debutant » garde l'essentiel (extraits proposés par l'IA, style des sous-titres, musique, format)
+// et retire les outils fins (passage libre, durée, polices, volumes, logo, miroir, écran de fin…).
+export const LEVELS = ['debutant', 'avance'];
+export const sanitizeLevel = (v) => (LEVELS.includes(v) ? v : null);
+
+/** Étapes de l'éditeur, dans l'ordre (l'étape 1, le choix de l'interview, précède : c'est la page d'accueil du studio). `adv` : réservée au niveau avancé. */
+export const FLOW = [
+  { id: 'niveau', label: 'Niveau' },
+  { id: 'extraits', label: 'Extrait' },
+  { id: 'style', label: 'Sous-titres' },
+  { id: 'musique', label: 'Musique' },
+  { id: 'cadrage', label: 'Format' },
+  { id: 'fin', label: 'Écran de fin', adv: true },
+  { id: 'creer', label: 'Créer' },
+];
+/** Étapes de l'éditeur pour un niveau (niveau inconnu : le parcours simple, plus court). */
+export const stepsFor = (level) => FLOW.filter((st) => !st.adv || level === 'avance');
+/** Libellés de la barre des étapes, interview comprise : « Interview », « Niveau », « Extrait »… */
+export const stepLabels = (level) => ['Interview', ...stepsFor(level).map((st) => st.label)];
+
+/**
+ * Réglages d'habillage que le parcours débutant masque : ils sont remis à des valeurs simples pendant qu'il est actif (la
+ * personne ne peut ni les voir ni les changer), puis rétablis si elle repasse en avancé.
+ */
+export const BEGINNER_DEFAULTS = { mirror: false, logoOn: false, endCardOn: false, quality: 'hd', musicVolume: 0.25, voice: 1 };
+
 /** Styles « classiques TikTok » : chacun fixe le comportement (mode) et des valeurs de départ, toutes modifiables ensuite. */
 export const PRESETS = {
   hormozi: {
