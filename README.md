@@ -97,8 +97,8 @@ qu'à choisir les extraits.
   l'extrait) et **2 à 4 hashtags**. Elle est générée **une seule fois**, avec les extraits, et stockée avec eux (aucun appel de plus quand
   un visiteur ouvre le studio). Les hashtags sont nettoyés côté serveur (2 à 4, sans doublon, repli `#lisnard #politique`). Les
   extraits générés avant cette version n'ont pas de description : il faut les régénérer depuis l'admin.
-  Dans l'onglet « Créer », le bloc « Description à copier-coller » reprend la description de l'extrait choisi, suivie de la source et des
-  crédits d'images ; elle reste modifiable.
+  Dans l'onglet « Créer », le bloc « Description à copier-coller » reprend la description de l'extrait choisi (accroche et hashtags), avec le crédit de la
+  musique quand il y en a un ; elle ne contient plus la source de l'interview. Elle reste modifiable.
 - **Bibliothèque de musiques** (admin → « Musique ») : l'admin dépose ses propres morceaux (MP3, M4A, WAV, OGG, FLAC ; 8 s à 10 min, 40 Mo),
   avec titre, catégorie (motivant, épique, cinématique, autres) et crédit facultatif, et confirme avoir le droit de les utiliser. Le
   serveur vérifie le fichier, le convertit en MP3 stéréo et **égalise le volume** (−16 LUFS, pour que tous sonnent pareil sous la voix ;
@@ -265,8 +265,8 @@ qu'à choisir les extraits.
   clip dans la page n'est pas un téléchargement (le lien porte `?use=download`, le partage `?use=share`). Les personnes sont comptées
   avec une empreinte irréversible de l'adresse IP (HMAC avec `SESSION_SECRET`) : l'adresse n'est jamais stockée, l'empreinte est effacée
   après 90 jours (les compteurs restent) ; c'est une approximation (même connexion = une personne). Les mentions légales le décrivent.
-- **Garde-fous** : la vidéo n'affiche plus de bandeau « Source » (choix de l'éditeur : la source va dans la description de la publication) ;
-  l'onglet Créer prépare ce texte (« Source : titre · date — lien de l'interview ») avec un bouton Copier. Les sous-titres sont ceux
+- **Garde-fous** : la vidéo n'affiche plus de bandeau « Source » et la description ne la contient plus (choix de l'éditeur ; la source reste
+  disponible sur l'écran de fin, si on l'active). Les sous-titres sont ceux
   de la transcription (corrections éventuelles signalées si elles s'en éloignent), et il faut cocher un engagement à ne pas
   déformer les propos avant de créer.
 - **Fond des sous-titres** : libass ne sait pas arrondir son fond rectangulaire, et il le double de teinte là où deux lignes se
