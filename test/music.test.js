@@ -103,7 +103,7 @@ test('bibliothèque : un morceau déposé est converti, proposé au studio, lisi
   assert.equal(assets.music[0].id, t.id);
   assert.equal(assets.music[0].url, `/api/studio/music/${t.id}`);
   assert.equal(assets.music.find((m) => m.id === 'cinematique').url, '/music/cinematique.mp3');
-  assert.deepEqual(assets.music_categories.map((c) => c.id), ['motivant', 'epique', 'cinematique', 'autre']);
+  assert.deepEqual(assets.music_categories.map((c) => c.id), ['tendance', 'motivant', 'epique', 'cinematique', 'autre']);
   assert.ok(!('path' in assets.music[0]));
 
   // lecture avec Range

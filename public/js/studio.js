@@ -844,7 +844,7 @@ async function openEditor(youtubeId) {
         if (auditionId === m.id) { audition.pause(); auditionId = null; } else { phone.pause(); audition.src = m.url; audition.volume = 0.6; audition.play().catch(() => {}); auditionId = m.id; }
         renderMusic();
       } }, auditionId === m.id ? '■' : '▶'),
-      el('button', { type: 'button', class: 'st-trackname', 'data-k': `t:${m.id}`, 'aria-pressed': String(m.id === S.music.id), onclick: () => pick(m.id) }, el('strong', {}, m.title), el('small', {}, [catLabel(m.category), m.mood, m.bpm ? `${m.bpm} bpm` : '', mmss(m.duration_s * 1000)].filter(Boolean).join(' · '))),
+      el('button', { type: 'button', class: 'st-trackname', 'data-k': `t:${m.id}`, 'aria-pressed': String(m.id === S.music.id), onclick: () => pick(m.id) }, el('strong', {}, m.title), el('small', {}, [m.category === 'tendance' ? m.credit : catLabel(m.category), m.mood, m.bpm ? `${m.bpm} bpm` : '', mmss(m.duration_s * 1000)].filter(Boolean).join(' · '))),
       m.id === S.music.id ? el('span', { class: 'badge ok' }, 'choisie') : null);
     const cats = (assets.music_categories ?? []).filter((c) => assets.music.some((m) => m.category === c.id));
     if (musicCat !== 'all' && !cats.some((c) => c.id === musicCat)) musicCat = 'all';

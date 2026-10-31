@@ -659,8 +659,8 @@ async function renderMusicLibrary() {
 
   const emptyLib = () => h('p', { class: 'status' }, 'Aucun morceau ajouté pour le moment. Pour des musiques motivantes, épiques ou cinématiques libres de droits, regarde la bibliothèque audio de YouTube Studio, Pixabay Music, Uppbeat ou Mixkit, puis ajoute ici les fichiers que tu télécharges.');
 
-  const row = (t, own) => {
-    const src = own ? `/api/admin/studio/music/${t.id}/file` : t.url;
+  const row = (t, own, trend = false) => {
+    const src = own || trend ? `/api/admin/studio/music/${t.id}/file` : t.url;
     const meta = [mmss(t.duration_s), t.size_bytes ? fmtSize(t.size_bytes) : '', t.bpm ? `${t.bpm} bpm` : '', t.mood].filter(Boolean).join(' · ');
     const titleInput = h('input', { class: 'text', type: 'text', value: t.title, maxlength: '80', 'aria-label': 'Titre' });
     const creditInput = h('input', { class: 'text', type: 'text', value: t.credit ?? '', maxlength: '200', placeholder: 'Crédit (facultatif)', 'aria-label': 'Crédit' });
@@ -668,13 +668,13 @@ async function renderMusicLibrary() {
     const offBadge = h('span', { class: 'badge off-badge', hidden: t.enabled }, 'Masqué');
     const patch = (ctrl, body, okMsg) =>
       mutate(ctrl, 'PATCH', `/${t.id}`, body, okMsg, () => {
-        const nt = [...data.library, ...data.builtin].find((x) => x.id === t.id);
+        const nt = [...data.library, ...(data.trending ?? []), ...data.builtin].find((x) => x.id === t.id);
         if (nt) Object.assign(t, nt);
         li.classList.toggle('off', !t.enabled);
         offBadge.hidden = t.enabled;
       });
     li.append(
-      own ? h('div', { class: 'mfields' }, titleInput, creditInput) : h('div', { class: 'mfields' }, h('strong', {}, t.title)),
+      own ? h('div', { class: 'mfields' }, titleInput, creditInput) : h('div', { class: 'mfields' }, h('strong', {}, trend ? `${t.rank ? `${t.rank}. ` : ''}${t.title}` : t.title), trend && t.credit ? h('small', {}, ` ${t.credit}`) : null),
       h('small', { class: 'mmeta' }, meta, ' ', offBadge),
       h('audio', { controls: true, preload: 'none', src }),
       h('div', { class: 'actions' },
@@ -699,7 +699,64 @@ async function renderMusicLibrary() {
     return li;
   };
 
+  // --- sons tendance TikTok (actualisés chaque semaine)
+  let ts = data.trending_status ?? {};
+  let poll = null;
+  const trendBox = h('section', { class: 'panel' });
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '');
+  function drawTrending() {
+    const refreshBtn = h('button', { class: 'btn', type: 'button', disabled: !ts.available || ts.running }, ts.running ? 'Actualisation en cours…' : 'Actualiser maintenant');
+    refreshBtn.addEventListener('click', () => busy(refreshBtn, async () => {
+      try {
+        ts = await api('POST', '/studio/music/trending/refresh');
+        watch();
+      } catch (e) {
+        fail(e, trendNote);
+      }
+      drawTrending();
+    }));
+    const trendNote = h('p', { class: 'status', role: 'status' });
+    const lines = [];
+    if (!ts.available) lines.push(`Indisponible : ${ts.reason}.`);
+    else {
+      lines.push(`Les 100 sons du moment sur TikTok (${ts.country}) sont récupérés automatiquement une fois par semaine et proposés dans la catégorie « Tendances » du studio.`);
+      if (ts.last_ok_at) lines.push(`Dernière actualisation réussie : ${when(ts.last_ok_at)}${ts.last_result ? ` (${ts.last_result.total} sons, ${ts.last_result.added} nouveaux${ts.last_result.failed ? `, ${ts.last_result.failed} ignorés` : ''})` : ''}.`);
+      else lines.push('Pas encore actualisé : le premier classement arrive dans les minutes qui suivent le démarrage du serveur.');
+    }
+    if (ts.last_error && (!ts.last_ok_at || ts.last_error_at > ts.last_ok_at)) lines.push(`Dernière tentative en échec : ${ts.last_error} (nouvel essai automatique dans quelques heures).`);
+    trendBox.replaceChildren(
+      h('h2', {}, `Tendances TikTok (${ts.live ?? 0})`),
+      ...lines.map((l, i) => h('p', { class: i === 0 || !String(l).startsWith('Dernière tentative') ? 'status' : 'status err' }, l)),
+      h('div', { class: 'actions' }, refreshBtn),
+      trendNote,
+      data.trending?.length
+        ? h('details', {}, h('summary', {}, 'Voir les sons et en masquer'), h('ul', { class: 'mlist' }, data.trending.map((t) => row(t, false, true))))
+        : null);
+  }
+  function watch() {
+    clearInterval(poll);
+    if (!ts.running) return;
+    poll = setInterval(async () => {
+      try {
+        ts = await api('GET', '/studio/music/trending');
+        if (!ts.running) {
+          clearInterval(poll);
+          data = await api('GET', '/studio/music');
+          ts = data.trending_status ?? ts;
+        }
+        if (gen !== routeGen) return clearInterval(poll);
+        drawTrending();
+      } catch {
+        clearInterval(poll);
+      }
+    }, 5000);
+  }
+  const stopPoll = cleanup;
+  cleanup = () => { clearInterval(poll); stopPoll?.(); };
+
   function draw() {
+    drawTrending();
+    watch();
     libTitle = h('h2', {}, `Ma bibliothèque (${data.library.length})`);
     libUl = data.library.length ? h('ul', { class: 'mlist' }, data.library.map((t) => row(t, true))) : null;
     libBody = h('div', {}, libUl ?? emptyLib());
@@ -715,6 +772,7 @@ async function renderMusicLibrary() {
         h('label', { class: 'check' }, rights, ' Je confirme avoir le droit d’utiliser ce morceau (licence libre de droits, achetée ou créée par moi).'),
         h('div', { class: 'actions' }, send, cancelUp, upStatus)),
       note,
+      trendBox,
       h('section', { class: 'panel' }, libTitle, libBody),
       h('section', { class: 'panel' },
         h('h2', {}, `Morceaux d’origine (${data.builtin.length})`),
