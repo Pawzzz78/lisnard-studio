@@ -1069,6 +1069,7 @@ async function openEditor(youtubeId) {
   const stopExpiry = () => { clearInterval(expiryTimer); expiryTimer = 0; };
 
   function renderCreateSummary() {
+    updateSource(); // la description suit l'extrait choisi et la musique
     const track = assets.music.find((m) => m.id === S.music.id);
     put(createSummary, el('ul', { class: 'st-sum' },
       el('li', {}, el('strong', {}, 'Durée : '), S.extracts.length ? (easy() ? secs(totalS()) : `${secs(totalS())} (${S.extracts.length} extrait${S.extracts.length > 1 ? 's' : ''})`) : 'aucun extrait choisi'),
