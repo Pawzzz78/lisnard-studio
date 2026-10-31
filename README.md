@@ -186,8 +186,11 @@ qu'à choisir les extraits.
     `tools/build_kernels.mjs`) : aucune bibliothèque native à installer, 7 fois plus rapide que du JavaScript seul, mêmes résultats
     qu'ONNX Runtime (à 10⁻⁶ près, vérifié).
   - **deux panneaux** (plein écran avec suivi du visage) : quand, dans un plan, le visage suivi n'est pas repéré partout (moins de 95 % du
-    plan : `FRAMING.splitBelow`) alors qu'une **deuxième personne** est là (vue en même temps que lui, au moins 3 images), le cadre risquerait
-    de se retrouver dans le vide. L'écran est alors **coupé en deux, pour ce plan seulement** : la personne suivie (David Lisnard s'il est
+    plan : `FRAMING.splitBelow`) alors qu'une **deuxième personne** est là (vue en même temps que lui, au moins 3 images, et **nettement à côté** :
+    ses visages sont séparés d'au moins 1,3 fois la largeur de deux visages qui se touchent, `FRAMING.splitSepMargin` ; jamais deux fois la même
+    personne : un visage dédoublé par la détection, ou deux visages qui ressemblent tous les deux à David Lisnard, ne donnent pas deux panneaux),
+    le cadre risquerait de se retrouver dans le vide. Chaque panneau est resserré pour ne jamais montrer l'autre personne (moins de 22 % de la
+    largeur de la source, `FRAMING.splitHardMinW` : pas de découpe, le cadrage simple reste). L'écran est alors **coupé en deux, pour ce plan seulement** : la personne suivie (David Lisnard s'il est
     reconnu) **en haut**, l'autre personne (le journaliste) **en bas**, chacune dans un panneau 9:8 centré sur son visage et qui le suit
     (fenêtre choisie pour que le visage fasse environ 30 % du panneau, entre 34 % et 60 % de la largeur de la source ; le visage un peu au-dessus
     du milieu). Ailleurs dans l'extrait, le cadrage simple continue ; au plus 8 plans par extrait sont coupés en deux. Dans ces plans le
