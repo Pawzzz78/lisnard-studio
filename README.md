@@ -178,6 +178,16 @@ qu'à choisir les extraits.
     petit moteur de réseaux de neurones écrit pour l'occasion (`nn.js`, noyaux WebAssembly SIMD de `tools/kernels.wat` assemblés par
     `tools/build_kernels.mjs`) : aucune bibliothèque native à installer, 7 fois plus rapide que du JavaScript seul, mêmes résultats
     qu'ONNX Runtime (à 10⁻⁶ près, vérifié).
+  - **deux panneaux** (plein écran avec suivi du visage) : quand, dans un plan, le visage suivi n'est pas repéré partout (moins de 95 % du
+    plan : `FRAMING.splitBelow`) alors qu'une **deuxième personne** est là (vue en même temps que lui, au moins 3 images), le cadre risquerait
+    de se retrouver dans le vide. L'écran est alors **coupé en deux, pour ce plan seulement** : la personne suivie (David Lisnard s'il est
+    reconnu) **en haut**, l'autre personne (le journaliste) **en bas**, chacune dans un panneau 9:8 centré sur son visage et qui le suit
+    (fenêtre choisie pour que le visage fasse environ 30 % du panneau, entre 34 % et 60 % de la largeur de la source ; le visage un peu au-dessus
+    du milieu). Ailleurs dans l'extrait, le cadrage simple continue ; au plus 8 plans par extrait sont coupés en deux. Dans ces plans le
+    visage compte comme « repéré à 100 % » (rien n'est perdu), ce qui évite aussi le repli sur le cadre manuel quand le visage suivi est trop
+    peu visible. Rendu : deux `crop` posés par-dessus le cadrage simple (`overlay` avec `enable` sur les plans concernés, `vstack`) ;
+    aperçu : la même vidéo dessinée deux fois dans un canevas avec les mêmes fenêtres (`splitAtClip`, `public/js/framing.js`). Pas de
+    deuxième personne vue avec la première : le cadrage simple reste (rien à mettre en bas). L'étape « Format » l'explique ;
   - **miroir** : retourne l'image gauche-droite. Il est appliqué après le cadrage et avant l'incrustation : les sous-titres
     ne sont jamais retournés (en revanche les textes visibles dans l'image le sont). Il ne change pas les droits sur la
     vidéo d'origine ;

@@ -38,6 +38,8 @@
 .ph-screen { position: relative; aspect-ratio: 9 / 16; background: #111; border-radius: 1.4rem; overflow: hidden; box-shadow: var(--shadow-hover); border: 5px solid #0d0f2b; touch-action: pan-y; }
 .ph-stage { position: absolute; inset: 0; will-change: transform; }
 .ph-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #111; }
+.ph-split { position: absolute; inset: 0; width: 100%; height: 100%; background: #111; pointer-events: none; } /* deux panneaux : les clics passent à la vidéo dessous */
+.ph-split[hidden] { display: none; }
 .ph-video.panning { cursor: grab; touch-action: pan-y; }
 .ph-video.panning:active { cursor: grabbing; }
 .sub-box { position: absolute; transform: translate(-50%, -50%); cursor: grab; touch-action: none; padding: .2rem; border: 1px dashed transparent; border-radius: 6px; }

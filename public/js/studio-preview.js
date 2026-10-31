@@ -1,7 +1,7 @@
 // Aperçu en direct du clip : cadre 9:16 avec la vidéo (cadrage seul, préparé par le serveur), les sous-titres dessinés par le
 // navigateur avec exactement les mêmes groupes, horaires, tailles et réductions que le rendu final (studio-core.js), la musique
 // synchronisée. Les sous-titres se déplacent au doigt ou à la souris. Aucun innerHTML : tout est posé en nœuds.
-import { cropXAtClip } from './framing.js';
+import { cropXAtClip, splitAtClip } from './framing.js';
 import { OUT, activeAt, boxPad, boxPath, brollOpacity, displayText, fitScale, kenBurnsAt, usableWidth, zoomAt, zoomOrigin } from './studio-core.js';
 
 /** Crée un élément (propriétés, style, événements « on… »). */
@@ -47,7 +47,8 @@ export const rgba = (hex, a) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseIn
  */
 export function createPhone({ onMove, onCrop, onPick }) {
   const video = el('video', { class: 'ph-video', playsinline: '', preload: 'auto', loop: true });
-  const stage = el('div', { class: 'ph-stage' }, video); // la vidéo seule zoome : images b-roll et sous-titres restent fixes
+  const splitCanvas = el('canvas', { class: 'ph-split', hidden: true }); // écran coupé en deux : la même vidéo dessinée deux fois
+  const stage = el('div', { class: 'ph-stage' }, video, splitCanvas); // la vidéo seule zoome : images b-roll et sous-titres restent fixes
   const brollImg = el('img', { class: 'ph-broll', alt: '', hidden: true });
   const pickLayer = el('div', { class: 'ph-pick', hidden: true }, el('span', {}, 'Touche l’écran pour choisir le point de zoom'));
   const pickDot = el('div', { class: 'ph-pickdot', hidden: true });
@@ -188,11 +189,39 @@ export function createPhone({ onMove, onCrop, onPick }) {
     }
   }
 
+  /**
+   * Deux panneaux (la personne suivie en haut, l'autre en bas) : la vidéo est dessinée deux fois dans un canevas, avec les mêmes fenêtres
+   * que le rendu (framing.js, splitAtClip). Cachés quand l'écran n'est pas coupé en deux à cet instant.
+   */
+  function drawSplit() {
+    const sp = framing.fit === 'crop' && framing.follow && video.videoWidth ? splitAtClip(framing.follow, video.currentTime || 0) : null;
+    if (!sp) {
+      if (!splitCanvas.hidden) splitCanvas.hidden = true;
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(2, Math.round(screen.clientWidth * dpr));
+    const H = Math.max(2, Math.round(screen.clientHeight * dpr));
+    if (splitCanvas.width !== W || splitCanvas.height !== H) {
+      splitCanvas.width = W;
+      splitCanvas.height = H;
+    }
+    const g = splitCanvas.getContext('2d');
+    const [vw, vh] = [video.videoWidth, video.videoHeight];
+    for (const [p, y] of [[sp.top, 0], [sp.bottom, H / 2]]) {
+      const [sw, sh] = [p.fw * vw, p.fh * vh];
+      g.drawImage(video, (vw - sw) * p.x, p.cy * vh - sh / 2, sw, sh, 0, y, W, H / 2);
+    }
+    splitCanvas.style.transform = framing.mirror ? 'scaleX(-1)' : '';
+    splitCanvas.hidden = false;
+  }
+
   /** Cadrage appliqué en direct : position (plein écran) et miroir, sans demander de nouvel aperçu au serveur. */
   function applyFraming() {
     video.style.objectPosition = framing.fit === 'crop' ? `${(framing.follow ? cropXAtClip(framing.follow, video.currentTime || 0, framing.cropX) : framing.cropX) * 100}% 50%` : '50% 50%';
     video.style.transform = framing.mirror ? 'scaleX(-1)' : '';
     video.classList.toggle('panning', framing.fit === 'crop');
+    drawSplit();
   }
 
   /** Zoom de la vidéo et image b-roll à l'instant t : mêmes courbes que le rendu (studio-core.js), calculées à chaque image. */

@@ -149,6 +149,7 @@ studioRouter.post(
       segments: usable ? clip.segments : null,
       faces: usable ? clip.faces : 0,
       coverage: usable ? clip.coverage : 0,
+      split: usable ? clip.split : 0, // part du clip où l'écran est coupé en deux (la personne suivie en haut, l'autre en bas)
       crowded: usable ? clip.crowded : 0,
       recognized: usable ? clip.recognized : 0,
       ident_best: usable ? clip.identBest : null,

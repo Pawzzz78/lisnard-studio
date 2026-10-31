@@ -23,7 +23,19 @@ export const FRAMING = {
   likelyMargin: 0.1, // … d'au moins cet écart
   minCoverage: 0.5, // en dessous, le visage est trop peu visible dans l'extrait : pas de cadrage automatique
   minFaceWidth: 0.04, // en dessous (fraction de la largeur de l'image), le visage est trop petit pour être suivi de façon fiable
+  // deux panneaux : quand le visage suivi n'est pas repéré partout dans un plan alors qu'une deuxième personne y est, l'écran est coupé en
+  // deux (la personne suivie en haut, l'autre en bas) : le cadre ne peut plus se retrouver dans le vide
+  splitBelow: 0.95, // part du plan où le visage suivi est repéré, en dessous de laquelle on passe en deux panneaux
+  splitMinShotS: 1, // un plan plus court que ça reste en cadrage simple (pas de va-et-vient d'une seconde)
+  splitFace: 0.3, // largeur du visage dans un panneau (fraction de la largeur du panneau)
+  splitMinW: 0.34, // fenêtre d'un panneau : largeur minimale (fraction de la largeur de la source) : plus petit, l'image devient floue
+  splitMaxW: 0.6, // … et maximale
+  splitMinTogether: 3, // images où les deux personnes sont vues ensemble pour que ce soient bien deux personnes
+  maxSplitWindows: 8, // au-delà (beaucoup de coupes), le cadrage reste simple : le graphe ffmpeg resterait raisonnable
 };
+
+/** Un panneau a le format 9:8 (la moitié d'un écran 9:16). */
+export const PANEL = { w: 9, h: 8 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const round = (v, n) => Math.round(v * 10 ** n) / 10 ** n;
@@ -134,6 +146,40 @@ export function pickTrack(tracks, subject = 'auto') {
 /** Nombre de visages distincts présents de façon significative dans l'extrait. */
 export const faceCount = (tracks) => tracks.filter((tr) => tr.share >= FRAMING.minShare && tr.count >= 2).length;
 
+/**
+ * La personne suivie (en haut) et l'autre personne du plan (en bas) : la plus présente parmi les autres visages qui ont été vus EN MÊME TEMPS
+ * que la personne suivie (deux visages qui ne sont jamais ensemble peuvent être la même personne perdue puis retrouvée).
+ */
+export function pickPair(tracks, subject = 'auto') {
+  const top = pickTrack(tracks, subject);
+  if (!top) return null;
+  const frames = new Set(top.pts.map((p) => p.fi));
+  const together = (tr) => tr.pts.filter((p) => frames.has(p.fi)).length;
+  const others = tracks
+    .filter((tr) => tr !== top && tr.share >= FRAMING.minShare && tr.count >= 2 && together(tr) >= FRAMING.splitMinTogether)
+    .sort((a, b) => b.count - a.count || b.weight - a.weight);
+  return { top, bottom: others[0] ?? null };
+}
+
+const median = (a) => {
+  const s = [...a].sort((p, q) => p - q);
+  return s.length ? s[Math.floor(s.length / 2)] : 0;
+};
+
+/**
+ * Fenêtre d'un panneau pour un visage : largeur `fw` (fraction de la largeur de la source, choisie pour que le visage fasse
+ * `splitFace` du panneau), hauteur `fh` (fraction de la hauteur de la source, format 9:8) et centre vertical `cy` (le visage un peu
+ * au-dessus du milieu). `aspect` : largeur / hauteur de la source.
+ */
+export function panelWindow(tracks, aspect) {
+  const pts = tracks.flatMap((tr) => tr.pts);
+  const maxW = Math.min(FRAMING.splitMaxW, PANEL.w / (PANEL.h * aspect)); // la hauteur de la fenêtre ne peut pas dépasser la source
+  const fw = round(clamp(median(pts.map((p) => p.w)) / FRAMING.splitFace, Math.min(FRAMING.splitMinW, maxW), maxW), 4);
+  const fh = round((fw * aspect * PANEL.h) / PANEL.w, 4);
+  const cy = round(clamp(median(pts.map((p) => p.cy)) + 0.06 * fh, fh / 2, 1 - fh / 2), 4);
+  return { fw, fh, cy };
+}
+
 /** Médiane glissante sur 5 valeurs : écarte les détections isolées (visage mal placé sur une image). */
 const median5 = (a) => a.map((_, i) => [-2, -1, 0, 1, 2].map((d) => a[clamp(i + d, 0, a.length - 1)]).sort((p, q) => p - q)[2]);
 
@@ -146,9 +192,9 @@ const ease = (u) => u * u * (3 - 2 * u);
  * courbe douce `ease` (deux points de même x = cadre immobile) : le cadre reste immobile, puis se déplace d'un point à l'autre
  * en démarrant et en s'arrêtant doucement, à une vitesse et une accélération bornées.
  */
-export function framingPath(track, fromS, toS, aspect, startX = null) {
+export function framingPath(track, fromS, toS, aspect, startX = null, windowW = null) {
   const dur = toS - fromS;
-  const cw = windowWidth(aspect);
+  const cw = windowW ?? windowWidth(aspect); // fenêtre 9:16 par défaut ; un panneau a sa propre largeur
   if (cw >= 0.999) return [{ t: 0, x: 0.5 }, { t: round(dur, 3), x: 0.5 }]; // source plus étroite que l'écran : rien à cadrer
   const k = cw / (1 - cw); // largeur de cadre exprimée en unités de cropX
   const pts = track.pts;
@@ -204,19 +250,43 @@ export function splitShots(fromS, toS, cuts = []) {
   return bounds.slice(1).map((end, i) => ({ from: bounds[i], to: end }));
 }
 
+/** Points-clés d'un extrait à partir de ceux de ses plans (chacun relatif au début du plan) : une seule suite, sans doublon. */
+function joinKeys(parts, fromS) {
+  const keys = [];
+  for (const p of parts) {
+    const off = p.from - fromS;
+    for (const k of p.keys) {
+      const point = { t: round(off + k.t, 3), x: k.x };
+      const prev = keys[keys.length - 1];
+      if (prev && point.t === prev.t && point.x === prev.x) continue;
+      keys.push(point);
+    }
+  }
+  return keys;
+}
+
 /**
- * Cadrage d'un extrait : { keys, faces, coverage } (coverage : part de l'extrait où le visage suivi a été détecté),
+ * Cadrage d'un extrait : { keys, faces, coverage, plan, splitShare } (coverage : part de l'extrait où le visage suivi a été détecté),
  * ou null si aucun visage n'a été trouvé. Chaque plan de l'interview (entre deux coupes de montage) est cadré séparément ;
  * à la coupe le cadre saute directement sur le visage du nouveau plan, comme le fait la coupe elle-même.
+ *
+ * Deux panneaux : dans un plan où le visage suivi n'est pas repéré partout (moins de `splitBelow`) mais où une deuxième personne est
+ * là, le cadre risquerait de se retrouver dans le vide. `plan` décrit alors l'écran coupé en deux, pour ces plans seulement :
+ * `{ windows: [[de, à], …] (secondes depuis le début de l'extrait), top, bottom }` ; chaque panneau a sa fenêtre
+ * (`fw`, `fh`, `cy`, voir panelWindow) et sa trajectoire `keys` sur tout l'extrait (elle reste immobile hors des plans coupés en deux).
+ * La personne suivie est en haut, l'autre en bas. `plan` vaut null s'il n'y en a pas.
  */
 export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject = 'auto', cuts = [], ident = null }) {
   const [fromS, toS] = [startMs / 1000, endMs / 1000];
   const shots = splitShots(fromS, toS, cuts).map((sh) => {
     const tracks = faceTracks(frames, fps, aspect, sh.from, sh.to, ident, shotBounds(sh.from, sh.to, cuts, frames.length / fps));
-    const track = pickTrack(tracks, subject);
-    return { ...sh, tracks, track };
+    const pair = pickPair(tracks, subject);
+    const expected = Math.max(1, Math.round((sh.to - sh.from) * fps));
+    const split = Boolean(pair?.bottom) && pair.top.count / expected < FRAMING.splitBelow && sh.to - sh.from >= FRAMING.splitMinShotS;
+    return { ...sh, tracks, track: pair?.top ?? null, other: pair?.bottom ?? null, expected, split };
   });
   if (!shots.some((sh) => sh.track)) return null;
+  if (shots.filter((sh) => sh.split).length > FRAMING.maxSplitWindows) for (const sh of shots) sh.split = false;
   let detected = 0;
   let faces = 0;
   let prevEnd = null;
@@ -227,7 +297,7 @@ export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject
   const widths = [];
   const parts = shots.map((sh) => {
     if (!sh.track) return { ...sh, keys: null };
-    detected += sh.track.count;
+    detected += sh.split ? sh.expected : sh.track.count; // en deux panneaux, les deux personnes sont à l'écran : rien n'est « perdu »
     for (const p of sh.track.pts) widths.push(p.w);
     faces = Math.max(faces, faceCount(sh.tracks));
     if (faceCount(sh.tracks) > 1) {
@@ -240,29 +310,43 @@ export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject
     return { ...sh, keys };
   });
   // plan sans visage : on garde la position du plan précédent (ou, au début, celle du premier plan avec un visage)
-  let hold = parts.find((p) => p.keys).keys[0].x;
-  for (const p of parts) {
-    if (p.keys) hold = p.keys.at(-1).x;
-    else p.keys = [{ t: 0, x: hold }, { t: round(p.to - p.from, 3), x: hold }];
-  }
-  const keys = [];
-  for (const p of parts) {
-    const off = p.from - fromS;
-    for (const k of p.keys) {
-      const point = { t: round(off + k.t, 3), x: k.x };
-      const prev = keys[keys.length - 1];
-      if (prev && point.t === prev.t && point.x === prev.x) continue;
-      keys.push(point);
-    }
+  const holdKeys = (list) => {
+    let hold = list.find((p) => p.keys).keys[0].x;
+    return list.map((p) => {
+      if (p.keys) {
+        hold = p.keys.at(-1).x;
+        return p;
+      }
+      return { ...p, keys: [{ t: 0, x: hold }, { t: round(p.to - p.from, 3), x: hold }] };
+    });
+  };
+  const keys = joinKeys(holdKeys(parts), fromS);
+  let plan = null;
+  const splitParts = parts.filter((p) => p.split);
+  if (splitParts.length) {
+    const panel = (pick) => {
+      const geo = panelWindow(splitParts.map(pick), aspect);
+      let end = null;
+      const perShot = parts.map((p) => {
+        if (!p.split) return { from: p.from, to: p.to, keys: null };
+        const k = framingPath(pick(p), p.from, p.to, aspect, end, geo.fw);
+        end = k.at(-1).x;
+        return { from: p.from, to: p.to, keys: k };
+      });
+      return { ...geo, keys: joinKeys(holdKeys(perShot), fromS) };
+    };
+    plan = { windows: splitParts.map((p) => [round(p.from - fromS, 3), round(p.to - fromS, 3)]), top: panel((p) => p.track), bottom: panel((p) => p.other) };
   }
   const expected = Math.max(1, Math.round((toS - fromS) * fps));
   widths.sort((a, b) => a - b);
-  return { keys, faces, coverage: round(Math.min(1, detected / expected), 2), faceW: widths.length ? widths[Math.floor(widths.length / 2)] : 0, crowded, recognized, identBest };
+  const splitShare = plan ? round(plan.windows.reduce((n, [a, b]) => n + (b - a), 0) / (toS - fromS), 2) : 0;
+  return { keys, faces, coverage: round(Math.min(1, detected / expected), 2), faceW: widths.length ? widths[Math.floor(widths.length / 2)] : 0, crowded, recognized, identBest, plan, splitShare };
 }
 
 /**
  * Cadrage de tout le clip : un segment par extrait, sur la ligne de temps du clip (t0, t1 en secondes ; les points-clés restent
  * relatifs à t0). `keys` vaut null quand aucun visage n'a été trouvé : le cadre manuel s'applique alors à ce segment.
+ * `plan` : écran coupé en deux dans certains plans du segment (voir framingForExtract), sinon null ; `split` : part du clip ainsi coupée.
  */
 export function framingForClip({ frames, fps, aspect, extracts, subject = 'auto', cuts = [], ident = null }) {
   let t0 = 0;
@@ -271,6 +355,7 @@ export function framingForClip({ frames, fps, aspect, extracts, subject = 'auto'
   let crowded = 0;
   let recognized = 0;
   let identBest = null;
+  let splitTime = 0;
   const off = { none: 0, small: 0, rare: 0 }; // extraits sans cadrage automatique, selon la raison
   const segments = extracts.map((e) => {
     const dur = (e.end_ms - e.start_ms) / 1000;
@@ -284,9 +369,10 @@ export function framingForClip({ frames, fps, aspect, extracts, subject = 'auto'
       off.rare++;
       r = null;
     }
-    const seg = { t0: round(t0, 3), t1: round(t0 + dur, 3), keys: r ? r.keys : null };
+    const seg = { t0: round(t0, 3), t1: round(t0 + dur, 3), keys: r ? r.keys : null, plan: r?.plan ?? null };
     t0 += dur;
     if (r) {
+      splitTime += r.splitShare * dur;
       faces = Math.max(faces, r.faces);
       covered += r.coverage * dur;
       crowded += r.crowded;
@@ -298,7 +384,7 @@ export function framingForClip({ frames, fps, aspect, extracts, subject = 'auto'
   const missing = off.none + off.small + off.rare;
   // pourquoi le cadrage automatique manque (le plus fréquent) : « small », « rare » ou « none » (aucun visage)
   const reason = missing ? Object.entries(off).sort((x, y) => y[1] - x[1])[0][0] : null;
-  return { segments, faces, coverage: t0 ? round(covered / t0, 2) : 0, crowded, recognized, identBest: identBest === null ? null : round(identBest, 2), reason, missing };
+  return { segments, faces, coverage: t0 ? round(covered / t0, 2) : 0, split: t0 ? round(splitTime / t0, 2) : 0, crowded, recognized, identBest: identBest === null ? null : round(identBest, 2), reason, missing };
 }
 
 /** Position du cadre à l'instant t (secondes depuis le début du segment). */
@@ -308,6 +394,19 @@ export function cropXAt(keys, t) {
     if (t < keys[i].t) return keys[i - 1].x + (keys[i].x - keys[i - 1].x) * ease((t - keys[i - 1].t) / (keys[i].t - keys[i - 1].t)); // deux points au même instant : saut (coupe)
   }
   return keys[keys.length - 1].x;
+}
+
+/**
+ * Panneaux à l'instant t du clip (secondes) si l'écran est coupé en deux à cet instant : { top, bottom } avec, pour chacun, la fenêtre
+ * (`fw`, `fh`, `cy`) et la position `x` du cadre (même convention que cropX). null sinon.
+ */
+export function splitAtClip(segments, t) {
+  const seg = segments?.find((s) => t >= s.t0 && t < s.t1);
+  if (!seg?.plan) return null;
+  const rel = t - seg.t0;
+  if (!seg.plan.windows.some(([a, b]) => rel >= a && rel < b)) return null;
+  const at = (p) => ({ fw: p.fw, fh: p.fh, cy: p.cy, x: cropXAt(p.keys, rel) });
+  return { top: at(seg.plan.top), bottom: at(seg.plan.bottom) };
 }
 
 /** Position du cadre à l'instant t du clip (secondes), fond de repli `fallback` si le segment n'a pas de visage. */
