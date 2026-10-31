@@ -97,8 +97,8 @@ qu'à choisir les extraits.
   l'extrait) et **2 à 4 hashtags**. Elle est générée **une seule fois**, avec les extraits, et stockée avec eux (aucun appel de plus quand
   un visiteur ouvre le studio). Les hashtags sont nettoyés côté serveur (2 à 4, sans doublon, repli `#lisnard #politique`). Les
   extraits générés avant cette version n'ont pas de description : il faut les régénérer depuis l'admin.
-  Dans l'onglet « Créer », le bloc « Description à copier-coller » reprend la description de l'extrait choisi (accroche et hashtags), avec le crédit de la
-  musique quand il y en a un ; elle ne contient plus la source de l'interview. Elle reste modifiable.
+  Dans l'onglet « Créer », le bloc « Description à copier-coller » reprend la description de l'extrait choisi (accroche et hashtags), suivie du **lien du Discord** (`DISCORD_URL`, `public/js/studio-core.js`)
+  et du crédit de la musique quand il y en a un ; elle ne contient plus la source de l'interview. Elle reste modifiable.
 - **Bibliothèque de musiques** (admin → « Musique ») : l'admin dépose ses propres morceaux (MP3, M4A, WAV, OGG, FLAC ; 8 s à 10 min, 40 Mo),
   avec titre, catégorie (motivant, épique, cinématique, autres) et crédit facultatif, et confirme avoir le droit de les utiliser. Le
   serveur vérifie le fichier, le convertit en MP3 stéréo et **égalise le volume** (−16 LUFS, pour que tous sonnent pareil sous la voix ;
