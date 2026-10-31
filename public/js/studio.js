@@ -273,7 +273,7 @@ async function openEditor(youtubeId) {
     style: sanitizeStyle(prefs.style, fontIds),
     music: { id: assets.music.some((m) => m.id === prefs.music?.id) ? prefs.music.id : null, volume: Number.isFinite(prefs.music?.volume) ? prefs.music.volume : 0.25 },
     voice: Number.isFinite(prefs.voice) ? prefs.voice : 1,
-    layout: { fit: prefs.layout?.fit === 'crop' ? 'crop' : 'blur', cropX: 0.5, quality: prefs.layout?.quality === 'fast' ? 'fast' : 'hd', mirror: prefs.layout?.mirror === true, follow: { on: false, subject: detail.faces?.identified ? 'lisnard' : 'auto' } }, // follow : le cadre suit le visage (plein écran) ; décoché au départ, c'est le visiteur qui le demande ; « lisnard » : la personne de référence quand elle est reconnue
+    layout: { fit: prefs.layout?.fit === 'crop' ? 'crop' : 'blur', cropX: 0.5, quality: prefs.layout?.quality === 'fast' ? 'fast' : 'hd', mirror: prefs.layout?.mirror === true, follow: { on: true, subject: detail.faces?.identified ? 'lisnard' : 'auto' } }, // follow : le cadre suit le visage (plein écran) ; coché au départ (sans effet tant que l'analyse des visages n'est pas prête ou en mode fond flou) ; « lisnard » : la personne de référence quand elle est reconnue
     framing: { ready: detail.faces?.ready === true, identified: detail.faces?.identified === true, segments: null, faces: 0, coverage: 0, split: 0, crowded: 0, recognized: 0, reason: null, missing: 0, loading: false }, // cadrage automatique : trajectoire reçue du serveur
     zoom: { on: false, auto: true, ...sanitizeZoom({}), events: [] }, // plus d'étape « Images & zooms » : toujours éteint (le champ reste pour les modèles enregistrés avant)
     ticket: 0,
