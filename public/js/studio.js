@@ -1,7 +1,7 @@
 // Studio de clips : choix d'une interview, extraits (proposés par l'IA ou libres), sous-titres TikTok (style, police, couleurs,
 // contour, position, taille), musique, cadrage, puis création du MP4 sur le serveur. Aucun innerHTML : tout est posé en nœuds.
 import { CARD, PALETTES as EC_PALETTES, TEMPLATES as EC_TEMPLATES, cardBlob, drawEndCard, loadImage, needsPhoto } from './endcard.js';
-import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
+import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, descriptionFooter, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
 import { createPhone, el, outlineShadow, rgba } from './studio-preview.js';
 import { fmtDate } from './ui.js';
 
@@ -254,7 +254,7 @@ async function showList() {
 }
 
 const disclaimer = () =>
-  el('p', { class: 'st-legal' }, 'Les extraits proviennent d’interviews dont les droits appartiennent à leurs auteurs. Pense à citer la source dans la description de ta vidéo (le studio te prépare le texte). Ne déforme pas le sens des propos : garde les phrases entières, et le contexte.');
+  el('p', { class: 'st-legal' }, 'Les extraits proviennent d’interviews dont les droits appartiennent à leurs auteurs. Ne déforme pas le sens des propos : garde les phrases entières, et le contexte.');
 
 // ---------------------------------------------------------------------------------------- éditeur
 
@@ -1518,14 +1518,12 @@ async function openEditor(youtubeId) {
   /** Description à copier : légende de l'extrait choisi (générée avec les extraits), puis la source de l'interview et les crédits de la musique. */
   function updateSource() {
     captionHelp.textContent = S.extracts.some((e) => e.caption)
-      ? 'Légende TikTok prête à l’emploi (accroche et hashtags proposés avec l’extrait), suivie de la source de l’interview, que la vidéo n’affiche pas. Tu peux la modifier.'
-      : 'Source de l’interview à coller dans ta description, car la vidéo ne l’affiche pas. Ajoute ton accroche et tes hashtags.';
+      ? 'Légende prête à l’emploi (accroche, hashtags et lien du Discord). Tu peux la modifier.'
+      : 'Écris ton accroche et tes hashtags : le lien du Discord est déjà là.';
     if (captionEdited) return;
     const caption = S.extracts.find((e) => e.caption)?.caption ?? '';
     const song = assets.music.find((m) => m.id === S.music.id);
-    const source =
-      `${sourceText(S.video.title, S.video.published_at)} — https://www.youtube.com/watch?v=${S.video.youtube_id}` +
-      (song?.credit ? `\nMusique : ${song.title} — ${song.credit}` : '');
+    const source = descriptionFooter(song);
     sourceField.value = fitDescription(caption, source);
     countSource();
     const wrapped = sourceField.value.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 30)), 0);
