@@ -21,7 +21,16 @@ const identTag = (refs) => (refs.count ? `${refs.version}/${IDENT_ALGO}` : '');
 
 // Définition de travail : le grand côté de l'image d'analyse fait maxSide pixels (un visage doit y mesurer ~20 px, soit environ 5 %
 // de la largeur de l'image d'origine). Une image toutes les 0,2 s (5 par seconde), une toutes les 0,4 s au-delà d'une heure et demie.
-export const FACES = { fps: 5, longFps: 2.5, longAfterS: 90 * 60, maxSide: 384, threshold: 0.6, model: 'yunet-2023mar + sface-2021dec' };
+// Qualité 2 : analyse en 640 px (au lieu de 384) et deuxième passe en 1280 px (faces-rescue.js) ; une analyse plus ancienne est « à refaire ».
+export const FACES = {
+  fps: 5,
+  longFps: 2.5,
+  longAfterS: 90 * 60,
+  maxSide: Number(process.env.STUDIO_FACES_MAX_SIDE) || 640,
+  threshold: 0.5,
+  quality: 2,
+  model: 'yunet-2023mar + sface-2021dec',
+};
 
 const MODEL = new URL('./models/face_detection_yunet_2023mar.onnx', import.meta.url);
 
@@ -125,7 +134,10 @@ async function save(job, { aspect, fps, refs }, result) {
   if (kind === 'identify') {
     await pool.query('UPDATE video_faces SET ident = $2, ident_version = $3 WHERE video_id = $1 AND status = \'ready\' AND file_stamp = $4', [video.id, identJson, identVersion, stampOf(video)]);
   } else {
-    const content = { fps, aspect: Math.round(aspect * 1000) / 1000, model: FACES.model, cuts: result.cuts, frames: result.frames, stats: detectionStats(result.frames) };
+    const content = {
+      fps, aspect: Math.round(aspect * 1000) / 1000, model: FACES.model, quality: FACES.quality, maxSide: FACES.maxSide,
+      cuts: result.cuts, frames: result.frames, stats: { ...detectionStats(result.frames), rescued: result.rescued ?? 0 },
+    };
     await pool.query(
       `INSERT INTO video_faces (video_id, status, content, error, file_stamp, analyzed_at, ident, ident_version) VALUES ($1, 'ready', $2, NULL, $3, now(), $4, $5)
        ON CONFLICT (video_id) DO UPDATE SET status = 'ready', content = $2, error = NULL, file_stamp = $3, analyzed_at = now(), ident = $4, ident_version = $5`,
@@ -188,6 +200,23 @@ export async function identifyAll() {
   return n;
 }
 
+/**
+ * Refait l'analyse des visages de toutes les vidéos analysées avec une qualité plus ancienne (voir FACES.quality). L'ancienne analyse reste
+ * utilisée jusqu'à la fin de la nouvelle. Renvoie le nombre de vidéos mises en file.
+ */
+export async function reanalyzeOutdated() {
+  if (!facesEnabled()) return 0;
+  const { rows } = await pool.query(
+    `SELECT v.id, v.youtube_id, v.file_name, v.file_size, v.file_uploaded_at, v.file_duration_s, v.file_width, v.file_height, f.file_stamp
+     FROM video_faces f JOIN videos v ON v.id = f.video_id
+     WHERE f.status = 'ready' AND v.file_name IS NOT NULL AND COALESCE((f.content->>'quality')::int, 1) < $1 ORDER BY v.id`,
+    [FACES.quality],
+  );
+  let n = 0;
+  for (const { file_stamp, ...video } of rows) if (file_stamp === stampOf(video) && enqueue(video, 'analyze')) n++; // une vidéo remplacée depuis est « à refaire » autrement
+  return n;
+}
+
 /** Même chose pour le dépôt d'une vidéo : jamais d'erreur remontée. */
 export function autoAnalyze(video) {
   if (facesEnabled() && video.file_name) startAnalysis(video).catch((e) => console.error(`Visages : ${e.message}`));
@@ -211,6 +240,7 @@ export async function facesStatus(video) {
   const { rows } = await pool.query(
     `SELECT status, error, file_stamp, analyzed_at, ident_version,
             jsonb_array_length(content->'frames') AS frames, jsonb_array_length(content->'cuts') AS cuts, (content->>'fps')::float AS fps, content->'stats' AS stats,
+            COALESCE((content->>'quality')::int, 1) AS quality, (content->>'maxSide')::int AS max_side,
             jsonb_array_length(COALESCE(ident, '[]'::jsonb)) AS samples,
             (SELECT count(*) FROM jsonb_array_elements(COALESCE(ident, '[]'::jsonb)) e WHERE (e->>2)::float >= $2)::int AS matches
      FROM video_faces WHERE video_id = $1`,
@@ -224,7 +254,8 @@ export async function facesStatus(video) {
   return {
     status: 'ready',
     analyzed_at: r.analyzed_at,
-    summary: { seconds: Math.round(r.frames / (r.fps || 1)), cuts: r.cuts, fps: r.fps, share: r.stats?.share ?? null, median_w: r.stats?.median_w ?? null },
+    summary: { seconds: Math.round(r.frames / (r.fps || 1)), cuts: r.cuts, fps: r.fps, share: r.stats?.share ?? null, median_w: r.stats?.median_w ?? null, max_side: r.max_side ?? 384, rescued: r.stats?.rescued ?? 0 },
+    outdated: r.quality < FACES.quality, // analysée avec une définition plus faible : à refaire pour mieux repérer les visages
     ident: { state: identState, samples: r.samples, matches: r.matches },
   };
 }

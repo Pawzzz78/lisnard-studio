@@ -1,7 +1,7 @@
 /** Reconnaissance de David Lisnard (admin) : photos de référence, et mise à jour des vidéos déjà analysées. */
 import express, { Router } from 'express';
 import { HttpError, ah } from '../http-error.js';
-import { facesEnabled, identifyAll } from '../studio/faces.js';
+import { facesEnabled, identifyAll, reanalyzeOutdated } from '../studio/faces.js';
 import { REFERENCE, addReference, deleteReference, listReferences, referenceThumb } from '../studio/references.js';
 
 export const facesAdminRouter = Router();
@@ -47,6 +47,12 @@ facesAdminRouter.get(
     if (!thumb) throw new HttpError(404, 'Photo introuvable.');
     res.set({ 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=86400' }).send(thumb);
   }),
+);
+
+/** Refait l'analyse des visages de toutes les vidéos analysées avec une qualité plus ancienne (définition plus faible). */
+facesAdminRouter.post(
+  '/reanalyze-all',
+  ah(async (_req, res) => res.json({ queued: await reanalyzeOutdated() })),
 );
 
 /** Relance la reconnaissance sur toutes les vidéos analysées avec un autre jeu de photos. */

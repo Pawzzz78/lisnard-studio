@@ -157,9 +157,16 @@ qu'à choisir les extraits.
   - **cadrage automatique sur le visage** (plein écran) : le cadre **suit la personne** au lieu de rester fixe. Les visages sont repérés
     **une fois par interview**, côté serveur (admin → fiche de la vidéo → « Cadrage automatique sur le visage » ; lancé tout seul au dépôt
     de la vidéo, à relancer pour les vidéos déjà déposées). Détecteur YuNet (OpenCV Zoo, licence MIT) : **une image toutes les 0,2 s**
-    (une toutes les 0,4 s au-delà d'1 h 30) en 384 px, soit environ 0,2 s de calcul par seconde de vidéo (une heure d'interview : une
-    douzaine de minutes en arrière-plan) ; un visage doit faire au moins ~5 % de la largeur de l'image (les plans très larges ne sont pas
-    suivis). Les **changements de plan** sont repérés en même temps (ffmpeg, `scene`). Ensuite chaque clip n'a plus qu'à calculer la
+    (une toutes les 0,4 s au-delà d'1 h 30) en 640 px (`STUDIO_FACES_MAX_SIDE`, 384 auparavant), soit environ 0,6 s de calcul par seconde de vidéo (une heure
+    d'interview : une demi-heure en arrière-plan) ; un visage doit alors faire au moins ~5 % de la largeur de l'image (6 à 9 % avant : les
+    plans larges n'étaient pas suivis). **Deuxième passe** (`src/studio/faces-rescue.js`, `STUDIO_FACES_RESCUE=off` pour la couper) : les images
+    **sans visage dans un plan où un visage est vu** (la personne est là, la détection a hésité) sont reprises en 1280 px, et les plans longs
+    sans visage sont sondés (une image toutes les 2 s) : si une sonde trouve un visage, tout le plan est repris. Au plus 60 % des images et
+    40 minutes de calcul ; le nombre d'images où un visage a été retrouvé est affiché dans l'admin. Seuil de détection abaissé de 0,6 à 0,5 (un
+    visage de trois quarts ou en partie caché est mieux gardé ; une fausse détection isolée ne devient pas une personne suivie : il faut au
+    moins 2 images et 20 % de présence). Les analyses plus anciennes sont signalées « à refaire » dans l'admin ; le bouton « Refaire les
+    analyses anciennes » (onglet « Reconnaissance », `POST /api/admin/faces/reanalyze-all`) les relance une par une, l'ancienne analyse
+    restant utilisée jusqu'à la fin de la nouvelle. Les **changements de plan** sont repérés en même temps (ffmpeg, `scene`). Ensuite chaque clip n'a plus qu'à calculer la
     trajectoire (`public/js/framing.js`, module pur partagé avec le navigateur) : un visage suivi par plan (David Lisnard s'il est reconnu,
     sinon le plus gros, ou celui de gauche / de droite au choix), un cadre qui reste immobile tant que le visage reste près du centre puis
     se déplace en douceur (zone morte large : hochements et gestes ne font pas bouger le cadre ; départ et arrivée progressifs, vitesse et accélération bornées), et qui saute directement sur le visage du
