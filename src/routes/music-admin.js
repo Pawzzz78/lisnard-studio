@@ -2,6 +2,7 @@
 import express, { Router } from 'express';
 import { HttpError, ah } from '../http-error.js';
 import { addTrack, adminTracks, deleteTrack, ensureMusic, libraryFile, MUSIC_LIMITS, updateTrack } from '../studio/music.js';
+import { refreshTrending, trendingConfig, trendingStatus } from '../studio/trending.js';
 
 export const musicAdminRouter = Router();
 
@@ -11,7 +12,33 @@ musicAdminRouter.get(
   ah(async (_req, res) => {
     await ensureMusic();
     res.set('Cache-Control', 'no-store');
-    res.json({ ...adminTracks(), limits: MUSIC_LIMITS });
+    res.json({ ...adminTracks(), limits: MUSIC_LIMITS, trending_status: await trendingStatus() });
+  }),
+);
+
+/** État des sons tendance TikTok (l'admin le relit pendant une actualisation). */
+musicAdminRouter.get(
+  '/trending',
+  ah(async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await trendingStatus());
+  }),
+);
+
+/** Lance l'actualisation tout de suite (elle tourne en arrière-plan : quelques minutes). */
+musicAdminRouter.post(
+  '/trending/refresh',
+  ah(async (_req, res) => {
+    const cfg = trendingConfig();
+    const st = await trendingStatus(cfg);
+    if (!st.available) throw new HttpError(409, `Sons tendance indisponibles : ${st.reason}.`);
+    if (st.running) throw new HttpError(409, 'Une actualisation est déjà en cours.');
+    await ensureMusic();
+    refreshTrending({ cfg }).then(
+      (r) => console.log(`Sons tendance : ${r.total} sons (${r.added} nouveaux, ${r.failed} ignorés, ${r.removed} supprimés).`),
+      (e) => console.warn(`Sons tendance : ${e.message}`),
+    );
+    res.status(202).json({ ...st, running: true });
   }),
 );
 

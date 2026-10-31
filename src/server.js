@@ -17,6 +17,7 @@ import { startScheduler } from './sync.js';
 import { startWallScheduler } from './wall/wall.js';
 import { startLibraryMaintenance } from './library/library.js';
 import { startVideoFetcher } from './video-fetch.js';
+import { startTrendingScheduler } from './studio/trending.js';
 
 // Origins the pages really use: YouTube (admin player, thumbnails), TikTok (wall), Pixabay/Pexels (stock thumbnails); blob: and data: for the end card photo and the account logo kept in the browser.
 // Inline styles stay allowed: the studio injects its @font-face rules and the admin sets style attributes.
@@ -100,4 +101,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   startWallScheduler();
   startLibraryMaintenance();
   startVideoFetcher();
+  startTrendingScheduler();
 }

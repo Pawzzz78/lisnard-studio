@@ -133,6 +133,13 @@ CREATE TABLE IF NOT EXISTS studio_music (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS studio_music_hidden (id TEXT PRIMARY KEY);
+-- Sons tendance TikTok (actualisés chaque semaine) : `source` 'tiktok', `external_id` = identifiant du son chez TikTok, `rank` = place dans le
+-- classement (NULL : n'y est plus, gardé quelques jours pour les rendus en cours puis supprimé), `last_seen_at` = dernière fois dans le classement.
+ALTER TABLE studio_music ADD COLUMN IF NOT EXISTS source       TEXT NOT NULL DEFAULT 'admin';
+ALTER TABLE studio_music ADD COLUMN IF NOT EXISTS external_id  TEXT;
+ALTER TABLE studio_music ADD COLUMN IF NOT EXISTS rank         INTEGER;
+ALTER TABLE studio_music ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS studio_music_external_idx ON studio_music (external_id) WHERE external_id IS NOT NULL;
 
 -- Studio : visages détectés dans une interview (cadrage automatique en plein écran). `file_stamp` : version du fichier vidéo
 -- analysé ; si la vidéo est remplacée, le résultat n'est plus utilisé.

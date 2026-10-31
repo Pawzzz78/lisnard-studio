@@ -9,7 +9,7 @@ import { pool } from '../db.js';
 import { HttpError, ah, jsonErrors } from '../http-error.js';
 import { DEFAULT_STYLE, LIMITS, PRESETS } from '../../public/js/studio-core.js';
 import { cancelJob, saveCard, saveLogo, config as studioConfig, createPreview, enqueueRender, FONTS, framingAllowed, getJob, normalizeRequest, previewFile, publicJob } from '../studio/render.js';
-import { CATEGORIES, ensureMusic, libraryFile, publicTracks } from '../studio/music.js';
+import { PUBLIC_CATEGORIES, ensureMusic, libraryFile, publicTracks } from '../studio/music.js';
 import { facesStatus, framingForRequest } from '../studio/faces.js';
 import { recordEvent } from '../studio/stats.js';
 import { ensureImage, searchPhotos, stockEnabled, stockProvider } from '../studio/stock.js';
@@ -51,7 +51,7 @@ studioRouter.get(
       default_style: DEFAULT_STYLE,
       fonts: FONTS.map(({ id, label, category, file, em_ratio, cap_em }) => ({ id, label, category, file, em_ratio, cap_em })),
       music: publicTracks(),
-      music_categories: CATEGORIES,
+      music_categories: PUBLIC_CATEGORIES,
       limits: { ...LIMITS, suggestionMinS: CLIP_LIMITS.minS, suggestionMaxS: CLIP_LIMITS.maxS },
       stock: { enabled: stockEnabled(), provider: stockProvider() },
     });

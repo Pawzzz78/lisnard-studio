@@ -26,6 +26,10 @@ export const CATEGORIES = [
   { id: 'autre', label: 'Autres' },
 ];
 const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
+/** Catégorie des sons tendance TikTok : réservée à l'actualisation automatique (l'admin n'y range pas ses morceaux). */
+export const TREND_CATEGORY = { id: 'tendance', label: 'Tendances' };
+/** Catégories montrées aux visiteurs. */
+export const PUBLIC_CATEGORIES = [TREND_CATEGORY, ...CATEGORIES];
 
 export const MUSIC_LIMITS = { minS: 8, maxS: 600, keepS: 300, maxBytes: 40 * 1024 * 1024, maxTracks: 100 };
 
@@ -60,8 +64,12 @@ const fromRow = (r) => ({
   bpm: null,
   duration_s: Number(r.duration_s),
   credit: r.credit,
-  license: r.credit ? `Utilisé avec l'accord de l'administrateur (${r.credit})` : "Utilisé avec l'accord de l'administrateur",
+  license: r.source === 'tiktok' ? 'Son tendance TikTok, utilisé avec l’accord de TikTok' : r.credit ? `Utilisé avec l'accord de l'administrateur (${r.credit})` : "Utilisé avec l'accord de l'administrateur",
   builtin: false,
+  source: r.source,
+  externalId: r.external_id,
+  rank: r.rank,
+  lastSeenAt: r.last_seen_at,
   enabled: r.enabled,
   size_bytes: Number(r.size_bytes),
   created_at: r.created_at,
@@ -85,24 +93,28 @@ export async function ensureMusic() {
   if (!loaded) await reloadMusic();
 }
 
-const available = (t) => (t.builtin ? !hidden.has(t.id) : t.enabled);
+// un son tendance qui n'est plus dans le classement n'est plus proposé (il reste quelques jours sur le disque pour les rendus en cours)
+const available = (t) => (t.builtin ? !hidden.has(t.id) : t.enabled && (t.source !== 'tiktok' || t.rank != null));
 
 /** Morceaux proposés aux visiteurs : bibliothèque d'abord (les ajouts récents en tête), puis les morceaux d'origine. */
 export function publicTracks() {
-  return [...library, ...builtin].filter(available).map(({ id, title, mood, category, bpm, duration_s, credit, license, url }) => ({ id, title, mood, category, bpm, duration_s, credit, license, url }));
+  const trending = library.filter((t) => t.source === 'tiktok').sort((a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9));
+  return [...trending, ...library.filter((t) => t.source !== 'tiktok'), ...builtin].filter(available).map(({ id, title, mood, category, bpm, duration_s, credit, license, url }) => ({ id, title, mood, category, bpm, duration_s, credit, license, url }));
 }
 
 /** Morceau utilisable dans un rendu (fichier sur disque), ou null. */
 export function findTrack(id) {
   const t = [...builtin, ...library].find((m) => m.id === id);
-  return t && available(t) ? t : null;
+  // un son tendance sorti du classement reste utilisable (brouillon ou rendu en cours) tant que son fichier est gardé
+  return t && (t.builtin ? !hidden.has(t.id) : t.enabled) ? t : null;
 }
 
 /** Tout le catalogue, pour l'admin (y compris les morceaux masqués). */
 export function adminTracks() {
   return {
     categories: CATEGORIES,
-    library: library.map(({ path: _p, ...t }) => t),
+    library: library.filter((t) => t.source !== 'tiktok').map(({ path: _p, ...t }) => t),
+    trending: library.filter((t) => t.source === 'tiktok').sort((a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9)).map(({ path: _p, ...t }) => t),
     builtin: builtin.map(({ path: _p, ...t }) => ({ ...t, enabled: !hidden.has(t.id) })),
   };
 }
@@ -142,14 +154,14 @@ async function probeAudio(file) {
  * Ajoute un morceau : vérifie le contenu, le convertit en MP3 stéréo à volume normalisé (EBU R128, -16 LUFS) et l'enregistre.
  * `data` : contenu brut du fichier envoyé. Renvoie le morceau créé.
  */
-export async function addTrack({ data, title, category, credit, filename }) {
+export async function addTrack({ data, title, category, credit, filename, source = 'admin', externalId = null, rank = null }) {
   if (!Buffer.isBuffer(data) || !data.length) throw new HttpError(400, 'Aucun fichier reçu.');
   if (data.length > MUSIC_LIMITS.maxBytes) throw new HttpError(413, `Fichier trop lourd (${Math.round(MUSIC_LIMITS.maxBytes / 1048576)} Mo au maximum).`);
   await ensureMusic();
-  if (library.length >= MUSIC_LIMITS.maxTracks) throw new HttpError(409, `La bibliothèque est pleine (${MUSIC_LIMITS.maxTracks} morceaux). Supprime-en avant d'en ajouter.`);
+  if (source !== 'tiktok' && library.filter((t) => t.source !== 'tiktok').length >= MUSIC_LIMITS.maxTracks) throw new HttpError(409, `La bibliothèque est pleine (${MUSIC_LIMITS.maxTracks} morceaux). Supprime-en avant d'en ajouter.`);
   const name = clean(title, 80) || titleFromFilename(filename);
   if (!name) throw new HttpError(400, 'Donne un titre au morceau.');
-  const cat = CATEGORY_IDS.has(category) ? category : 'autre';
+  const cat = source === 'tiktok' ? TREND_CATEGORY.id : CATEGORY_IDS.has(category) ? category : 'autre';
 
   const id = `m${randomBytes(5).toString('hex')}`;
   const dir = libraryDir();
@@ -169,8 +181,8 @@ export async function addTrack({ data, title, category, credit, filename }) {
     const stat = await fs.stat(out);
     const kept = Math.min(duration, MUSIC_LIMITS.keepS);
     const { rows } = await pool.query(
-      `INSERT INTO studio_music (id, title, category, credit, duration_s, size_bytes, file) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [id, name, cat, clean(credit, 200), Math.round(kept * 10) / 10, stat.size, `${id}.mp3`],
+      `INSERT INTO studio_music (id, title, category, credit, duration_s, size_bytes, file, source, external_id, rank, last_seen_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $8 = 'tiktok' THEN now() END) RETURNING *`,
+      [id, name, cat, clean(credit, 200), Math.round(kept * 10) / 10, stat.size, `${id}.mp3`, source, externalId, rank],
     );
     await reloadMusic();
     return library.find((t) => t.id === rows[0].id);
