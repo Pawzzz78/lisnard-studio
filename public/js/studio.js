@@ -254,7 +254,7 @@ async function showList() {
 }
 
 const disclaimer = () =>
-  el('p', { class: 'st-legal' }, 'Les extraits proviennent d’interviews dont les droits appartiennent à leurs auteurs. Pense à citer la source dans la description de ta vidéo (le studio te prépare le texte). Ne déforme pas le sens des propos : garde les phrases entières, et le contexte.');
+  el('p', { class: 'st-legal' }, 'Les extraits proviennent d’interviews dont les droits appartiennent à leurs auteurs. Ne déforme pas le sens des propos : garde les phrases entières, et le contexte.');
 
 // ---------------------------------------------------------------------------------------- éditeur
 
@@ -1518,14 +1518,12 @@ async function openEditor(youtubeId) {
   /** Description à copier : légende de l'extrait choisi (générée avec les extraits), puis la source de l'interview et les crédits de la musique. */
   function updateSource() {
     captionHelp.textContent = S.extracts.some((e) => e.caption)
-      ? 'Légende TikTok prête à l’emploi (accroche et hashtags proposés avec l’extrait), suivie de la source de l’interview, que la vidéo n’affiche pas. Tu peux la modifier.'
-      : 'Source de l’interview à coller dans ta description, car la vidéo ne l’affiche pas. Ajoute ton accroche et tes hashtags.';
+      ? 'Légende prête à l’emploi (accroche et hashtags). Tu peux la modifier.'
+      : 'Écris ton accroche et tes hashtags.';
     if (captionEdited) return;
     const caption = S.extracts.find((e) => e.caption)?.caption ?? '';
     const song = assets.music.find((m) => m.id === S.music.id);
-    const source =
-      `${sourceText(S.video.title, S.video.published_at)} — https://www.youtube.com/watch?v=${S.video.youtube_id}` +
-      (song?.credit ? `\nMusique : ${song.title} — ${song.credit}` : '');
+    const source = song?.credit ? `Musique : ${song.title} — ${song.credit}` : ''; // seul le crédit de la musique est ajouté quand la licence l'exige
     sourceField.value = fitDescription(caption, source);
     countSource();
     const wrapped = sourceField.value.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 30)), 0);
