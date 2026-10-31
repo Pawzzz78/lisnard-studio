@@ -787,6 +787,18 @@ async function renderFaceReferences() {
     });
   }
 
+  const redoBtn = h('button', { class: 'btn secondary', type: 'button' }, 'Refaire les analyses anciennes (meilleure définition)');
+  redoBtn.addEventListener('click', () =>
+    busy(redoBtn, async () => {
+      try {
+        const r = await api('POST', '/faces/reanalyze-all', {});
+        status(note, r.queued ? `Analyse relancée pour ${r.queued} vidéo${r.queued > 1 ? 's' : ''} (une à la fois, en arrière-plan ; les anciennes analyses restent utilisées jusqu'à la fin).` : 'Toutes les analyses sont déjà à la meilleure définition.', 'ok');
+      } catch (e) {
+        fail(e, note);
+      }
+    }),
+  );
+
   const updateBtn = h('button', { class: 'btn secondary', type: 'button' }, 'Mettre à jour les vidéos déjà analysées');
   updateBtn.addEventListener('click', () =>
     busy(updateBtn, async () => {
@@ -823,8 +835,8 @@ async function renderFaceReferences() {
             h('img', { src: `/api/admin/faces/references/${r.id}/thumb`, alt: r.name || `Photo ${r.id}`, width: 112, height: 112, loading: 'lazy' }),
             h('figcaption', {}, h('span', { class: 'ref-name', title: r.name }, r.name || `Photo ${r.id}`), r.suspicious ? h('span', { class: 'badge warn' }, 'à vérifier') : null,
               h('button', { class: 'btn danger small', type: 'button', onclick: (ev) => remove(r, ev.currentTarget) }, 'Retirer'))))),
-        h('div', { class: 'actions' }, updateBtn),
-        h('p', { class: 'status' }, 'Les vidéos analysées plus tard utilisent automatiquement les photos actuelles. Pour celles déjà analysées, ce bouton relance seulement la reconnaissance (pas la détection des visages).')),
+        h('div', { class: 'actions' }, updateBtn, redoBtn),
+        h('p', { class: 'status' }, 'Les vidéos analysées plus tard utilisent automatiquement les photos actuelles. Pour celles déjà analysées, le premier bouton relance seulement la reconnaissance (pas la détection des visages) ; le second refait toute l’analyse des vidéos analysées avec une définition plus faible (plus long : une vidéo à la fois).')),
     );
   }
   draw();
@@ -1867,7 +1879,7 @@ async function renderEditor(id) {
     const fc = clipState?.faces;
     if (!clipState?.file || !fc || fc.status === 'off') return facesBox.replaceChildren();
     const analysing = fc.status === 'queued' || fc.status === 'running';
-    const phase = fc.phase === 'identify' ? 'Reconnaissance de David Lisnard' : 'Analyse';
+    const phase = fc.phase === 'identify' ? 'Reconnaissance de David Lisnard' : fc.phase === 'rescue' ? 'Deuxième passe sur les visages difficiles' : 'Analyse';
     const id2 = fc.ident ?? { state: 'off' };
     const text = {
       none: 'Pas encore analysée : en plein écran, les visiteurs devront cadrer à la main.',
@@ -1914,6 +1926,8 @@ async function renderEditor(id) {
             ? 'Visages trop petits ou rarement visibles dans cette vidéo : le cadrage automatique sera indisponible pour les visiteurs.'
             : 'Visages petits ou souvent absents dans cette vidéo : le cadrage automatique ne sera proposé que pour les clips où le visage est assez grand et visible (la reconnaissance peut aussi échouer).')
         : null,
+      fc.status === 'ready' && fc.summary?.rescued ? h('p', { class: 'status' }, `Deuxième passe : ${fc.summary.rescued} image${fc.summary.rescued > 1 ? 's' : ''} où un visage a été retrouvé en grande définition.`) : null,
+      fc.status === 'ready' && fc.outdated ? h('p', { class: 'status err' }, `Analyse ancienne (définition ${fc.summary?.max_side ?? 384} px, sans deuxième passe) : relance-la pour mieux repérer les visages, surtout les petits.`) : null,
       identText ? h('p', { class: 'status' }, identText) : null,
       h('div', { class: 'actions' }, btn, identBtn));
     if (analysing) {
