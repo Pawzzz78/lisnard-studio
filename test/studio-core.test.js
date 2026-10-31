@@ -174,9 +174,9 @@ test('source à citer : titre tronqué et date en français', () => {
   assert.ok(long.endsWith(src) && long.includes('…'));
   assert.equal(fitDescription('Accroche #tag', src), `Accroche #tag\n\n${src}`);
   assert.equal(fitDescription('', src), src);
-  assert.equal(descriptionFooter(null), 'Discord : https://discord.gg/lisnard2027');
-  assert.equal(descriptionFooter({ title: 'Titre', credit: 'Artiste' }), 'Discord : https://discord.gg/lisnard2027\nMusique : Titre — Artiste');
-  assert.equal(fitDescription('Accroche', descriptionFooter(null)), 'Accroche\n\nDiscord : https://discord.gg/lisnard2027');
+  assert.equal(descriptionFooter(null), 'Rejoins-nous sur Discord : https://discord.gg/lisnard2027');
+  assert.equal(descriptionFooter({ title: 'Titre', credit: 'Artiste' }), 'Rejoins-nous sur Discord : https://discord.gg/lisnard2027\nMusique : Titre — Artiste');
+  assert.equal(fitDescription('Accroche', descriptionFooter(null)), 'Accroche\n\nRejoins-nous sur Discord : https://discord.gg/lisnard2027');
   assert.equal(fitDescription('Accroche #tag', ''), 'Accroche #tag', 'sans source : la légende seule, sans lignes vides');
   assert.equal(fitDescription('a'.repeat(3000), '').length, DESCRIPTION_MAX);
   assert.equal(sourceText('', null), 'Source : interview');
