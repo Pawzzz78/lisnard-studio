@@ -355,3 +355,34 @@ test('paire de personnes : « lisnard » en haut quand il est reconnu, l\'autre 
   const left = pickPair(tracks, 'left');
   assert.ok(left.top.meanX < left.bottom.meanX, 'à gauche choisi : la personne de gauche en haut');
 });
+
+test('deux panneaux : jamais deux fois la même personne (visages quasi superposés = pas de deuxième personne)', () => {
+  // un visage dédoublé par la détection : deux pistes presque au même endroit, vues ensemble
+  const lost = (t) => t % 10 >= 7;
+  const r = range(twoShot(30, { lost, cxL: 0.66, cxR: 0.7 }), 0, 30000);
+  assert.equal(r.plan, null, 'deux visages collés : pas de découpe en deux');
+  assert.equal(pickPair(faceTracks(twoShot(30, { cxL: 0.66, cxR: 0.7 }), 1, ASPECT, 0, 30, null), 'auto').bottom, null);
+});
+
+test('deux panneaux : si les deux visages ressemblent à la personne de référence, ce ne sont pas deux personnes', () => {
+  const frames = twoShot(30);
+  const ident = new Map(frames.flatMap((_, fi) => [[`${fi}:0`, 0.9], [`${fi}:1`, 0.9]]));
+  const tracks = faceTracks(frames, 1, ASPECT, 0, 30, ident);
+  assert.equal(pickPair(tracks, 'lisnard').bottom, null);
+});
+
+test('deux panneaux : la fenêtre d\'un panneau ne montre jamais l\'autre personne', () => {
+  const lost = (t) => t % 10 >= 7;
+  let split = 0;
+  // deux personnes de plus en plus proches : la fenêtre se resserre pour ne pas déborder sur l'autre visage
+  for (const [cxL, cxR] of [[0.3, 0.7], [0.4, 0.62], [0.44, 0.6]]) {
+    const r = range(twoShot(30, { lost, cxL, cxR }), 0, 30000);
+    if (!r.plan) continue;
+    split++;
+    for (const [p, other] of [[r.plan.top, cxL], [r.plan.bottom, cxR]]) {
+      const left = cropXAt(p.keys, 15) * (1 - p.fw);
+      assert.ok(other < left || other > left + p.fw, `l'autre visage (${other}) est hors de la fenêtre ${left.toFixed(2)}–${(left + p.fw).toFixed(2)}`);
+    }
+  }
+  assert.ok(split >= 2, 'au moins les cas bien séparés sont coupés en deux');
+});

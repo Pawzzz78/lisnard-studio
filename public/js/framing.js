@@ -31,6 +31,9 @@ export const FRAMING = {
   splitMinW: 0.34, // fenêtre d'un panneau : largeur minimale (fraction de la largeur de la source) : plus petit, l'image devient floue
   splitMaxW: 0.6, // … et maximale
   splitMinTogether: 3, // images où les deux personnes sont vues ensemble pour que ce soient bien deux personnes
+  splitSepMargin: 1.3, // deux personnes distinctes : leurs visages sont séparés d'au moins 1,3 fois la distance de deux visages qui se touchent
+  splitHardMinW: 0.22, // fenêtre minimale d'un panneau quand les deux personnes sont proches (plus petit : trop flou, pas de deux panneaux)
+  splitEdge: 0.01, // marge entre la fenêtre d'un panneau et le visage de l'autre personne (fraction de la largeur de la source)
   maxSplitWindows: 8, // au-delà (beaucoup de coupes), le cadrage reste simple : le graphe ffmpeg resterait raisonnable
 };
 
@@ -146,34 +149,50 @@ export function pickTrack(tracks, subject = 'auto') {
 /** Nombre de visages distincts présents de façon significative dans l'extrait. */
 export const faceCount = (tracks) => tracks.filter((tr) => tr.share >= FRAMING.minShare && tr.count >= 2).length;
 
-/**
- * La personne suivie (en haut) et l'autre personne du plan (en bas) : la plus présente parmi les autres visages qui ont été vus EN MÊME TEMPS
- * que la personne suivie (deux visages qui ne sont jamais ensemble peuvent être la même personne perdue puis retrouvée).
- */
-export function pickPair(tracks, subject = 'auto') {
-  const top = pickTrack(tracks, subject);
-  if (!top) return null;
-  const frames = new Set(top.pts.map((p) => p.fi));
-  const together = (tr) => tr.pts.filter((p) => frames.has(p.fi)).length;
-  const others = tracks
-    .filter((tr) => tr !== top && tr.share >= FRAMING.minShare && tr.count >= 2 && together(tr) >= FRAMING.splitMinTogether)
-    .sort((a, b) => b.count - a.count || b.weight - a.weight);
-  return { top, bottom: others[0] ?? null };
-}
-
 const median = (a) => {
   const s = [...a].sort((p, q) => p - q);
   return s.length ? s[Math.floor(s.length / 2)] : 0;
 };
+const quantile = (a, q) => {
+  const s = [...a].sort((p, r) => p - r);
+  return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : 0;
+};
+
+/**
+ * La personne suivie (en haut) et l'autre personne du plan (en bas) : la plus présente parmi les autres visages qui ont été vus EN MÊME TEMPS
+ * que la personne suivie ET qui sont bien une autre personne : visage nettement à côté (jamais deux fois la même personne : une double
+ * détection, ou un visage perdu puis retrouvé à côté, ne devient pas « l'autre personne »), et pas reconnu comme David Lisnard quand la
+ * personne suivie l'est. `gap` : écart horizontal prudent entre les deux visages, `wTop` / `wBottom` : leurs largeurs (fractions de la source).
+ */
+export function pickPair(tracks, subject = 'auto') {
+  const top = pickTrack(tracks, subject);
+  if (!top) return null;
+  const mine = new Map(top.pts.map((p) => [p.fi, p]));
+  const wTop = median(top.pts.map((p) => p.w));
+  const others = [];
+  for (const tr of tracks) {
+    if (tr === top || tr.share < FRAMING.minShare || tr.count < 2) continue;
+    const dx = tr.pts.filter((p) => mine.has(p.fi)).map((p) => Math.abs(p.cx - mine.get(p.fi).cx));
+    if (dx.length < FRAMING.splitMinTogether) continue;
+    const wBottom = median(tr.pts.map((p) => p.w));
+    const gap = quantile(dx, 0.25); // le quart des images où ils sont le plus proches : on se protège du pire cas
+    if (gap < (FRAMING.splitSepMargin * (wTop + wBottom)) / 2) continue; // trop près : c'est la même personne, ou ce serait la même image deux fois
+    if (top.ident !== null && top.ident >= FRAMING.samePerson && tr.ident !== null && tr.ident >= FRAMING.samePerson) continue; // les deux ressemblent à la personne de référence
+    others.push({ tr, gap, wBottom });
+  }
+  others.sort((a, b) => b.tr.count - a.tr.count || b.tr.weight - a.tr.weight);
+  const best = others[0];
+  return { top, bottom: best?.tr ?? null, gap: best?.gap ?? 0, wTop, wBottom: best?.wBottom ?? 0 };
+}
 
 /**
  * Fenêtre d'un panneau pour un visage : largeur `fw` (fraction de la largeur de la source, choisie pour que le visage fasse
- * `splitFace` du panneau), hauteur `fh` (fraction de la hauteur de la source, format 9:8) et centre vertical `cy` (le visage un peu
+ * `splitFace` du panneau, sans dépasser `cap` : la fenêtre ne doit pas montrer l'autre personne), hauteur `fh` (fraction de la hauteur de la source, format 9:8) et centre vertical `cy` (le visage un peu
  * au-dessus du milieu). `aspect` : largeur / hauteur de la source.
  */
-export function panelWindow(tracks, aspect) {
+export function panelWindow(tracks, aspect, cap = 1) {
   const pts = tracks.flatMap((tr) => tr.pts);
-  const maxW = Math.min(FRAMING.splitMaxW, PANEL.w / (PANEL.h * aspect)); // la hauteur de la fenêtre ne peut pas dépasser la source
+  const maxW = Math.min(FRAMING.splitMaxW, PANEL.w / (PANEL.h * aspect), cap); // la hauteur de la fenêtre ne peut pas dépasser la source ; `cap` : pour ne pas montrer l'autre personne
   const fw = round(clamp(median(pts.map((p) => p.w)) / FRAMING.splitFace, Math.min(FRAMING.splitMinW, maxW), maxW), 4);
   const fh = round((fw * aspect * PANEL.h) / PANEL.w, 4);
   const cy = round(clamp(median(pts.map((p) => p.cy)) + 0.06 * fh, fh / 2, 1 - fh / 2), 4);
@@ -282,8 +301,12 @@ export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject
     const tracks = faceTracks(frames, fps, aspect, sh.from, sh.to, ident, shotBounds(sh.from, sh.to, cuts, frames.length / fps));
     const pair = pickPair(tracks, subject);
     const expected = Math.max(1, Math.round((sh.to - sh.from) * fps));
-    const split = Boolean(pair?.bottom) && pair.top.count / expected < FRAMING.splitBelow && sh.to - sh.from >= FRAMING.splitMinShotS;
-    return { ...sh, tracks, track: pair?.top ?? null, other: pair?.bottom ?? null, expected, split };
+    // un panneau ne doit jamais montrer l'autre personne : sa fenêtre s'arrête avant le visage de l'autre ; si les deux sont trop proches, pas de deux panneaux
+    const capTop = pair?.bottom ? 2 * (pair.gap - pair.wBottom / 2 - FRAMING.splitEdge) : 0;
+    const capBottom = pair?.bottom ? 2 * (pair.gap - pair.wTop / 2 - FRAMING.splitEdge) : 0;
+    const apart = Math.min(capTop, capBottom) >= FRAMING.splitHardMinW;
+    const split = Boolean(pair?.bottom) && apart && pair.top.count / expected < FRAMING.splitBelow && sh.to - sh.from >= FRAMING.splitMinShotS;
+    return { ...sh, tracks, track: pair?.top ?? null, other: pair?.bottom ?? null, expected, split, capTop, capBottom };
   });
   if (!shots.some((sh) => sh.track)) return null;
   if (shots.filter((sh) => sh.split).length > FRAMING.maxSplitWindows) for (const sh of shots) sh.split = false;
@@ -324,8 +347,8 @@ export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject
   let plan = null;
   const splitParts = parts.filter((p) => p.split);
   if (splitParts.length) {
-    const panel = (pick) => {
-      const geo = panelWindow(splitParts.map(pick), aspect);
+    const panel = (pick, capKey) => {
+      const geo = panelWindow(splitParts.map(pick), aspect, Math.min(...splitParts.map((p) => p[capKey])));
       let end = null;
       const perShot = parts.map((p) => {
         if (!p.split) return { from: p.from, to: p.to, keys: null };
@@ -335,7 +358,7 @@ export function framingForExtract({ frames, fps, aspect, startMs, endMs, subject
       });
       return { ...geo, keys: joinKeys(holdKeys(perShot), fromS) };
     };
-    plan = { windows: splitParts.map((p) => [round(p.from - fromS, 3), round(p.to - fromS, 3)]), top: panel((p) => p.track), bottom: panel((p) => p.other) };
+    plan = { windows: splitParts.map((p) => [round(p.from - fromS, 3), round(p.to - fromS, 3)]), top: panel((p) => p.track, 'capTop'), bottom: panel((p) => p.other, 'capBottom') };
   }
   const expected = Math.max(1, Math.round((toS - fromS) * fps));
   widths.sort((a, b) => a - b);
