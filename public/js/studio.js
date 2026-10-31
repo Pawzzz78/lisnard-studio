@@ -358,7 +358,8 @@ async function openEditor(youtubeId) {
     S.layout.quality = l.quality === 'fast' ? 'fast' : 'hd';
     S.layout.mirror = l.mirror === true;
     S.layout.follow.on = l.follow?.on === true && S.framing.ready;
-    if (['lisnard', 'auto', 'left', 'right'].includes(l.follow?.subject) && (l.follow.subject !== 'lisnard' || S.framing.identified)) S.layout.follow.subject = l.follow.subject;
+    // quand David Lisnard est reconnu dans cette interview, on le suit toujours au départ : un ancien choix (« celui de droite »…) du brouillon n'est pas repris
+    if (!S.framing.identified && ['auto', 'left', 'right'].includes(l.follow?.subject)) S.layout.follow.subject = l.follow.subject;
     if (d.endCard) S.endCard = endCardSettings(d.endCard);
     S.jobId = typeof d.jobId === 'string' ? d.jobId : null;
     S.delivered = d.delivered === true;
