@@ -1,7 +1,7 @@
 // Studio de clips : choix d'une interview, extraits (proposés par l'IA ou libres), sous-titres TikTok (style, police, couleurs,
 // contour, position, taille), musique, cadrage, puis création du MP4 sur le serveur. Aucun innerHTML : tout est posé en nœuds.
 import { CARD, PALETTES as EC_PALETTES, TEMPLATES as EC_TEMPLATES, cardBlob, drawEndCard, loadImage, needsPhoto } from './endcard.js';
-import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
+import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, descriptionFooter, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
 import { createPhone, el, outlineShadow, rgba } from './studio-preview.js';
 import { fmtDate } from './ui.js';
 
@@ -1518,12 +1518,12 @@ async function openEditor(youtubeId) {
   /** Description à copier : légende de l'extrait choisi (générée avec les extraits), puis la source de l'interview et les crédits de la musique. */
   function updateSource() {
     captionHelp.textContent = S.extracts.some((e) => e.caption)
-      ? 'Légende prête à l’emploi (accroche et hashtags). Tu peux la modifier.'
-      : 'Écris ton accroche et tes hashtags.';
+      ? 'Légende prête à l’emploi (accroche, hashtags et lien du Discord). Tu peux la modifier.'
+      : 'Écris ton accroche et tes hashtags : le lien du Discord est déjà là.';
     if (captionEdited) return;
     const caption = S.extracts.find((e) => e.caption)?.caption ?? '';
     const song = assets.music.find((m) => m.id === S.music.id);
-    const source = song?.credit ? `Musique : ${song.title} — ${song.credit}` : ''; // seul le crédit de la musique est ajouté quand la licence l'exige
+    const source = descriptionFooter(song);
     sourceField.value = fitDescription(caption, source);
     countSource();
     const wrapped = sourceField.value.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil(l.length / 30)), 0);

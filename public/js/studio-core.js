@@ -308,6 +308,12 @@ export const assEscape = (t) => String(t).replace(/\\/g, '/').replace(/[{}]/g, '
 // Strictest caption limit among TikTok's posting API and Instagram Reels
 export const DESCRIPTION_MAX = 2200;
 
+// Lien ajouté à la fin de chaque description de vidéo
+export const DISCORD_URL = 'https://discord.gg/lisnard2027';
+
+/** Pied de la description : le lien du Discord, puis le crédit de la musique quand sa licence en demande un. */
+export const descriptionFooter = (song) => [`Discord : ${DISCORD_URL}`, song?.credit ? `Musique : ${song.title} — ${song.credit}` : ''].filter(Boolean).join('\n');
+
 const foldText = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 /** Ligne de source à citer dans la description de la vidéo : titre et date de l'interview d'origine. */
