@@ -428,14 +428,14 @@ export function createPhone({ onMove, onCrop, onPick }) {
       time.textContent = '0:00 / 0:00';
       if (music.src) music.currentTime = 0;
     },
-    /** Message sur l'aperçu ; `loading` : grand rond qui tourne et « Quelques secondes… » (préparation en cours, bien visible). */
+    /** Message sur l'aperçu ; `loading` : grand rond qui tourne et « Il se passe quelque chose… » (préparation en cours, bien visible). */
     setBusy(message, { retry = null, loading = false } = {}) {
       busy.hidden = !message;
       busy.classList.toggle('loading', Boolean(message) && loading && !retry);
       const kids = [];
       if (message && loading && !retry) kids.push(el('span', { class: 'ph-spinner', 'aria-hidden': 'true' }));
       kids.push(el('span', { class: 'ph-busy-text' }, message ?? ''));
-      if (message && loading && !retry) kids.push(el('small', {}, 'Quelques secondes…'));
+      if (message && loading && !retry) kids.push(el('small', {}, 'Il se passe quelque chose…'));
       if (message && retry) kids.push(el('button', { class: 'btn small', type: 'button', onclick: retry }, 'Réessayer'));
       busy.replaceChildren(...kids);
     },
