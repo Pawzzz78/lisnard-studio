@@ -114,25 +114,10 @@
 .st-link { border: 0; background: none; color: var(--color-accent); font: inherit; font-weight: 700; font-size: .8rem; cursor: pointer; padding: .4rem; }
 
 /* extraits */
-.st-exlist, .st-sugg, .st-lines, .st-tracks, .st-sum { list-style: none; margin: 0; padding: 0; }
-.st-ex, .st-card { border: 1px solid var(--color-hairline); border-radius: var(--radius); padding: .9rem 1rem; background: var(--color-surface-alt); }
-.st-exlist, .st-sugg { display: grid; gap: .8rem; }
-.st-ex-head, .st-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
-.st-edge { display: grid; gap: .25rem; margin-top: .6rem; font-size: .82rem; color: var(--color-text); }
-.st-edge-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
-.st-edge-label { min-width: 3rem; font-weight: 800; font-size: .72rem; text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--st-chamois-text); }
-.st-edge-text { min-width: 0; overflow-wrap: anywhere; color: var(--color-muted); }
-.st-time { width: 6.2rem; height: 2.2rem; padding: 0 .5rem; text-align: center; font: inherit; font-weight: 700; font-variant-numeric: tabular-nums; border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: #fff; color: var(--color-text); }
-.st-time:focus { outline: 3px solid var(--color-ring); outline-offset: 0; }
-.st-time.short { width: 4.2rem; }
-.st-time.on { border-color: var(--color-primary); background: var(--color-surface-alt); }
-.st-stepbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem; margin: .2rem 0 .9rem; }
-.st-step-label { font-size: .75rem; font-weight: 700; color: var(--color-muted); }
-.st-stepchips { flex-wrap: wrap; }
-.st-step-custom { display: inline-flex; align-items: center; gap: .3rem; }
-.st-step-custom small { color: var(--color-muted); font-weight: 700; }
-.st-ex-tools { display: flex; align-items: center; gap: .4rem; margin-top: .7rem; }
-.st-ex-tools .st-link { margin-left: auto; }
+.st-sugg, .st-lines, .st-tracks, .st-sum { list-style: none; margin: 0; padding: 0; }
+.st-card { border: 1px solid var(--color-hairline); border-radius: var(--radius); padding: .9rem 1rem; background: var(--color-surface-alt); }
+.st-sugg { display: grid; gap: .8rem; }
+.st-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
 .st-why { margin: .4rem 0 .2rem; font-size: .88rem; }
 .st-meta { margin: 0 0 .5rem; font-size: .78rem; color: var(--color-muted); }
 .st-text { margin: .5rem 0; font-size: .85rem; line-height: 1.55; color: var(--color-text); }
@@ -273,7 +258,6 @@
 .st-line-meta { min-height: 0; }
 .st-source { display: grid; gap: .5rem; justify-items: start; }
 .st-source-text { width: 100%; font: inherit; font-size: .9rem; line-height: 1.45; padding: .5rem .65rem; border: 1px solid var(--color-border); border-radius: .5rem; background: var(--color-surface-alt); color: var(--color-text); resize: none; }
-.st-stepchips button { padding: .5rem .7rem; }
 
 /* b-roll : image plein écran par-dessus la vidéo (le zoom ne la touche pas), sous les sous-titres */
 .ph-broll { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; transform-origin: center; will-change: transform, opacity; }
@@ -300,10 +284,10 @@
 
 @media (max-width: 900px), (pointer: coarse) {
   .st-mini { min-width: 2.75rem; height: 2.75rem; }
-  .st-time, .st-select { height: 2.75rem; }
+  .st-select { height: 2.75rem; }
   .st-link { min-height: 2.75rem; padding: .7rem .6rem; }
   .st-logout { min-height: 2.75rem; padding: .7rem .2rem; }
-  .st-chip, .st-stepchips button, .st-seek, .ph-size { min-height: 2.75rem; }
+  .st-chip, .st-seek, .ph-size { min-height: 2.75rem; }
   .st-check { min-height: 2.75rem; }
   .st-check input { width: 1.4rem; height: 1.4rem; }
   .ph-toggle { min-height: 2.75rem; }
@@ -314,9 +298,7 @@
   .st-preset, .st-font { min-height: 2.75rem; }
 }
 @media (max-width: 380px) {
-  .st-time { width: 5rem; }
   .st-panel { padding-inline: .8rem; }
-  .st-edge-label { min-width: 2.4rem; }
 }
 
 .badge { font-size: .72rem; font-weight: 700; padding: .12rem .55rem; border-radius: var(--radius-pill); background: var(--color-border); color: var(--color-muted); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
@@ -452,3 +434,8 @@
   .studio[data-level="debutant"]:not([data-tab="niveau"]) .st-steps li { min-width: 0; }
   .studio[data-level="debutant"]:not([data-tab="niveau"]) .st-step-n { width: 2.3rem; height: 2.3rem; }
 }
+
+/* extrait proposé choisi (niveau avancé) */
+.st-card.on { border-color: var(--color-success); background: #fff; box-shadow: 0 0 0 3px rgba(23,115,68,.14); }
+.st-picked { background: var(--color-success); border-color: var(--color-success); cursor: default; }
+.st-picked-note { margin: 0 0 .6rem; font-size: .85rem; font-weight: 700; color: var(--color-success); }

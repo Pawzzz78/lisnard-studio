@@ -113,9 +113,8 @@ qu'à choisir les extraits.
   ordinateur, le bouton ouvre `tiktok.com/upload`, télécharge la vidéo et copie la description. Le partage fait depuis le téléphone est
   compté par `POST /api/studio/render/:id/used`. La publication **automatique** n'est pas faite : l'API TikTok « Content Posting »
   exige une application TikTok validée (audit) et, sans elle, ne publie qu'en privé.
-- **Studio public** (`/studio/`) : les visiteurs choisissent une interview dont l'admin a autorisé les clips, prennent un ou
-  plusieurs extraits (jusqu'à 4, 90 s au total : les propositions de l'IA, ou un passage libre dans la transcription), ajustent le
-  début et la fin **avec précision**, puis habillent le clip :
+- **Studio public** (`/studio/`) : les visiteurs choisissent une interview dont l'admin a autorisé les clips, prennent **un extrait** (une
+  proposition de l'IA, ou un passage de la transcription : environ 25 s à partir de la ligne touchée ; 90 s au plus), puis habillent le clip :
   - **étapes** : le studio se fait une étape à la fois, avec une barre numérotée en haut (✓ pour les étapes faites) et des boutons
     « Retour » / « Étape suivante » : 1 interview (page d'accueil du studio), 2 niveau, 3 extrait, 4 sous-titres, 5 musique, 6 format
     (cadrage), 7 écran de fin (niveau avancé seulement), 8 créer. Sans niveau choisi on ne passe pas l'étape 2 ; sans extrait, on ne passe
@@ -130,10 +129,11 @@ qu'à choisir les extraits.
     réglages sont remis à des valeurs simples (`BEGINNER_DEFAULTS` dans `studio-core.js` : ni miroir, ni logo, ni écran de fin, HD,
     musique à 25 %, voix à 100 %) et **rétablis** si la personne repasse en avancé (en mémoire : perdus si elle recharge la page entre
     les deux). Un passage libre choisi en avancé reste affiché (« Ton passage actuel ») mais ne se modifie pas en débutant ;
-  - **réglage des bornes** : boutons − / + avec un pas au choix (0,1 s, 0,5 s par défaut, 1 s, 2 s, « Ligne » = jusqu'à la limite de ligne
-    suivante, ou n'importe quelle durée de 0,01 à 30 s dans le champ libre) ; on peut aussi **taper l'instant exact** (`1:23,5`).
-    Les bornes sont en millisecondes (arrondies au centième de seconde) ; une ligne coupée au milieu ne garde que les mots dits dans la
-    partie conservée, à leur horaire d'origine ;
+  - **un extrait, sans réglage des bornes** : l'écran « Extrait » ne propose plus de boutons − / + ni de champs d'instant (trop compliqué).
+    Les extraits de l'IA sont des cartes avec un bouton « Utiliser cet extrait » (« ✓ Extrait choisi » une fois pris) ; « Choisir un autre
+    passage » cherche un mot dans la transcription et touche une ligne. Choisir un extrait remplace le précédent (les anciens brouillons à
+    plusieurs extraits sont ramenés au premier). Une ligne coupée au milieu ne garde que les mots dits dans la partie conservée, à leur
+    horaire d'origine ;
   - **5 styles TikTok** : mots en surbrillance, un mot à la fois, karaoké, classique, sur fond sombre ;
   - **réglages** : police (22 polices libres dans `public/fonts/studio/`), taille, couleur du texte et du mot actif, contour
     (épaisseur et couleur), ombre, fond sombre (couleur, opacité et **arrondi**, de l'angle droit aux bords entièrement ronds), majuscules, mots affichés à la fois, largeur, animation « pop » ;
