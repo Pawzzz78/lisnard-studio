@@ -151,19 +151,6 @@ const secs = (n) => {
   const r = Math.round(n * 10) / 10;
   return `${String(r).replace('.', ',')} s`;
 };
-/** Instant d'une vidéo : 1:23,5 (dixièmes) ou 1:23,45 (centièmes si besoin). */
-const fmtT = (ms) => {
-  const t = Math.max(0, Math.round(ms / 10) * 10);
-  const cs = t % 1000;
-  const frac = cs % 100 === 0 ? String(cs / 100) : String(cs / 10).padStart(2, '0');
-  return `${Math.floor(t / 60000)}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')},${frac}`;
-};
-/** « 1:23,5 », « 1:23.5 », « 83,5 » ou « 83 » -> millisecondes ; null si illisible. */
-const parseT = (text) => {
-  const m = /^\s*(?:(\d{1,3}):)?(\d{1,5})(?:[.,](\d{1,3}))?\s*$/.exec(String(text));
-  if (!m) return null;
-  return Math.round(((Number(m[1] ?? 0) * 60 + Number(m[2])) * 1000 + Number((m[3] ?? '').padEnd(3, '0'))) / 10) * 10;
-};
 const loadPrefs = () => {
   try {
     return JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
@@ -194,7 +181,7 @@ const savePrefs = (S) => {
     clearTimeout(prefsTimer);
     prefsTimer = 0;
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ style: S.style, music: S.music, voice: S.voice, layout: { fit: S.layout.fit, quality: S.layout.quality, mirror: S.layout.mirror }, step: S.step, endCard: { on: S.endCard.on, dur: S.endCard.dur, design: S.endCard.design } }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ style: S.style, music: S.music, voice: S.voice, layout: { fit: S.layout.fit, quality: S.layout.quality, mirror: S.layout.mirror }, endCard: { on: S.endCard.on, dur: S.endCard.dur, design: S.endCard.design } }));
       S.onSaved?.();
     } catch {
       // stockage indisponible : sans importance
@@ -283,7 +270,6 @@ async function openEditor(youtubeId) {
     suggestions: detail.suggestions,
     extracts: [], // { start_ms, end_ms, title, from } : bornes en millisecondes ; `from` : début de l'extrait proposé d'origine
     level: loadLevel(), // 'debutant' | 'avance' | null (pas encore choisi) : voir « niveau » plus bas
-    step: prefs.step === 'line' ? 'line' : Number.isFinite(prefs.step) && prefs.step >= 10 && prefs.step <= 30000 ? prefs.step : 500, // pas de réglage : 'line' (limite de ligne) ou durée en ms
     style: sanitizeStyle(prefs.style, fontIds),
     music: { id: assets.music.some((m) => m.id === prefs.music?.id) ? prefs.music.id : null, volume: Number.isFinite(prefs.music?.volume) ? prefs.music.volume : 0.25 },
     voice: Number.isFinite(prefs.voice) ? prefs.voice : 1,
@@ -411,15 +397,6 @@ async function openEditor(youtubeId) {
   const exMs = (ex) => ({ start_ms: ex.start_ms, end_ms: ex.end_ms });
   const exDur = (ex) => (ex.end_ms - ex.start_ms) / 1000;
   const totalS = () => S.extracts.reduce((n, ex) => n + exDur(ex), 0);
-  /** Ligne de la transcription dite à l'instant `ms` (sinon la plus proche), pour rappeler où l'on en est. */
-  const lineAround = (ms) => {
-    let best = S.lines[0];
-    for (const l of S.lines) {
-      if (ms >= l.start_ms && ms < l.end_ms) return l;
-      if (Math.abs(l.start_ms - ms) < Math.abs(best.start_ms - ms)) best = l;
-    }
-    return best;
-  };
   // File duration may be missing: fall back to the last transcript line
   const videoEndMs = () => (S.video.duration_s > 0 ? Math.floor(S.video.duration_s * 1000) : (S.lines.at(-1)?.end_ms ?? 0));
 
@@ -527,19 +504,16 @@ async function openEditor(youtubeId) {
 
   // ============================================================ onglet Extraits
   const panelExtracts = el('div', { class: 'st-panel' });
-  const minTotalNote = () => `${secs(totalS())} sur ${LIMITS.maxTotalS} s maximum`;
 
   let booting = true;
-  let justAdded = null;
   function addExtract(start_ms, end_ms, title, from, caption = null, replace = false) {
     if (!replace && S.extracts.length >= LIMITS.maxExtracts) return alertNote(`${LIMITS.maxExtracts} extraits au maximum.`);
     const ex = { start_ms, end_ms: Math.min(end_ms, videoEndMs()), title, from, caption };
     if ((replace ? 0 : totalS()) + exDur(ex) > LIMITS.maxTotalS) return alertNote(`Le clip ne peut pas dépasser ${LIMITS.maxTotalS} secondes.`);
     if (replace) S.extracts = [ex];
     else S.extracts.push(ex);
-    justAdded = booting ? null : ex;
     extractsChanged();
-    if (!booting) toast(easy() ? 'Extrait choisi ✓' : replace ? 'Extrait choisi : il remplace ton clip (voir « Mon clip »).' : 'Extrait ajouté à ton clip (voir « Mon clip »).');
+    if (!booting) toast('Extrait choisi ✓');
   }
   function extractsChanged(fine = false) {
     rebuildSubtitles();
@@ -569,85 +543,6 @@ async function openEditor(youtubeId) {
     noteTimer = setTimeout(() => (note.textContent = ''), 4000);
   };
 
-  /**
-   * Règle une borne de l'extrait (`which` : 'start_ms' ou 'end_ms') sur l'instant `ms`, au centième de seconde. Refuse un clip trop
-   * court, trop long ou hors de la vidéo, en le disant.
-   */
-  function setEdge(ex, which, ms) {
-    const next = { ...ex, [which]: Math.round(ms / 10) * 10 };
-    if (next.start_ms < 0 || next.end_ms > videoEndMs()) return alertNote(`L’extrait doit rester entre 0:00 et ${fmtT(videoEndMs())}.`);
-    if (exDur(next) < LIMITS.minExtractS) return alertNote(`Un extrait doit durer au moins ${LIMITS.minExtractS} secondes.`);
-    if (totalS() - exDur(ex) + exDur(next) > LIMITS.maxTotalS) return alertNote(`Le clip ne peut pas dépasser ${LIMITS.maxTotalS} secondes.`);
-    Object.assign(ex, next);
-    extractsChanged(true);
-  }
-  /** Avance (+1) ou recule (-1) une borne d'un pas : une durée, ou jusqu'à la limite de ligne suivante / précédente. */
-  function nudge(ex, which, dir) {
-    const cur = ex[which];
-    if (S.step === 'line') {
-      const key = which === 'start_ms' ? 'start_ms' : 'end_ms';
-      const marks = S.lines.map((l) => l[key]);
-      const target = dir > 0 ? marks.find((t) => t > cur + 20) : [...marks].reverse().find((t) => t < cur - 20);
-      return target == null ? alertNote('Il n’y a pas de ligne plus loin.') : setEdge(ex, which, target);
-    }
-    setEdge(ex, which, cur + dir * S.step);
-  }
-  const move = (i, d) => {
-    const j = i + d;
-    if (j < 0 || j >= S.extracts.length) return;
-    [S.extracts[i], S.extracts[j]] = [S.extracts[j], S.extracts[i]];
-    extractsChanged();
-  };
-  const excerpt = (t, n = 70) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
-
-  function extractRow(ex, i) {
-    const btn = (label, title, fn, disabled, key) => el('button', { class: 'st-mini', type: 'button', title, 'aria-label': title, disabled, 'data-k': key, onclick: fn }, label);
-    const edge = (label, which, lessTitle, moreTitle) => {
-      // iOS decimal keypads have no ':'
-      const field = el('input', { class: 'st-time', type: 'text', inputmode: 'text', autocomplete: 'off', value: fmtT(ex[which]), 'aria-label': `${label} de l’extrait (minutes:secondes,dixièmes)`, title: 'Tu peux taper un instant : 1:23,5' });
-      field.addEventListener('change', () => {
-        const ms = parseT(field.value);
-        if (ms == null) { field.value = fmtT(ex[which]); return alertNote('Instant illisible : écris par exemple 1:23,5 ou 83,5.'); }
-        setEdge(ex, which, ms);
-        field.value = fmtT(ex[which]);
-      });
-      field.dataset.k = `${i}:${which}:t`;
-      const go = (dir) => nudge(ex, which, dir);
-      return el('div', { class: 'st-edge' },
-        el('div', { class: 'st-edge-ctl' }, el('span', { class: 'st-edge-label' }, label), btn('−', lessTitle, () => go(-1), false, `${i}:${which}:-1`), field, btn('+', moreTitle, () => go(1), false, `${i}:${which}:1`)),
-        el('span', { class: 'st-edge-text' }, `« ${excerpt(lineAround(ex[which]).text)} »`));
-    };
-    return el('li', { class: 'st-ex', 'data-ex': String(i) },
-      el('div', { class: 'st-ex-head' }, el('strong', {}, ex.title || 'Passage libre'), el('span', { class: 'badge' }, `${fmtT(ex.start_ms)} → ${fmtT(ex.end_ms)} · ${secs(exDur(ex))}`)),
-      edge('Début', 'start_ms', 'Commencer plus tôt (ajoute du temps avant)', 'Commencer plus tard (retire du temps au début)'),
-      edge('Fin', 'end_ms', 'Finir plus tôt (retire du temps à la fin)', 'Finir plus tard (ajoute du temps après)'),
-      el('div', { class: 'st-ex-tools' }, btn('↑', 'Monter', () => move(i, -1), i === 0, `${i}:up`), btn('↓', 'Descendre', () => move(i, 1), i === S.extracts.length - 1, `${i}:down`),
-        el('button', { class: 'st-link', type: 'button', onclick: () => { S.extracts.splice(i, 1); extractsChanged(); } }, 'Retirer')),
-    );
-  }
-
-  /** Pas de réglage des bornes : quelques valeurs rapides, ou n'importe quelle durée (champ libre). */
-  function stepBar() {
-    const chips = [[100, '0,1 s'], [500, '0,5 s'], [1000, '1 s'], [2000, '2 s'], ['line', 'Ligne']];
-    const custom = el('input', { class: 'st-time short', type: 'text', inputmode: 'text', autocomplete: 'off', 'aria-label': 'Autre pas, en secondes', placeholder: 'autre' });
-    const group = el('div', { class: 'seg st-stepchips', role: 'group', 'aria-label': 'Pas de réglage' });
-    const sync = () => {
-      group.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(String(S.step) === b.dataset.step)));
-      custom.value = chips.some(([v]) => v === S.step) ? '' : String(S.step / 1000).replace('.', ',');
-      custom.classList.toggle('on', Boolean(custom.value));
-    };
-    for (const [v, label] of chips) group.append(el('button', { type: 'button', 'data-step': String(v), onclick: () => { S.step = v; savePrefs(S); sync(); } }, label));
-    custom.addEventListener('change', () => {
-      const ms = parseT(custom.value);
-      if (ms == null || ms < 10 || ms > 30000) { sync(); return alertNote('Pas libre : entre 0,01 et 30 secondes (par exemple 0,3).'); }
-      S.step = ms;
-      savePrefs(S);
-      sync();
-    });
-    sync();
-    return el('div', { class: 'st-stepbar' }, el('span', { class: 'st-step-label' }, 'Précision des boutons − / +'), group, el('span', { class: 'st-step-custom' }, custom, el('small', {}, 's')));
-  }
-
   const search = el('input', { type: 'search', class: 'st-search', placeholder: 'Chercher un mot dans la transcription…', 'aria-label': 'Chercher dans la transcription' });
   const lineList = el('ul', { class: 'st-lines' });
   let shown = 60;
@@ -666,7 +561,7 @@ async function openEditor(youtubeId) {
   function startFree(i) {
     let b = i;
     while (b + 1 < S.lines.length && (S.lines[b].end_ms - S.lines[i].start_ms) / 1000 < 25) b++;
-    addExtract(S.lines[i].start_ms, S.lines[b].end_ms, null);
+    addExtract(S.lines[i].start_ms, S.lines[b].end_ms, null, null, null, true);
   }
 
   let suggShown = 6; // extraits proposés affichés d'emblée (les mieux notés d'abord) ; le reste sur demande
@@ -704,47 +599,33 @@ async function openEditor(youtubeId) {
 
   function renderExtracts() {
     if (easy()) {
-      justAdded = null;
       return putKeep(panelExtracts, ...easyExtracts());
     }
-    const taken = new Set(S.extracts.map((e) => e.from).filter((v) => v != null));
-    const addLabel = S.extracts.length === 1 ? 'Utiliser cet extrait' : 'Remplacer mon clip par cet extrait';
+    const cur = S.extracts[0] ?? null;
+    const free = cur && cur.from == null ? cur : null; // passage choisi dans la transcription (pas un extrait proposé)
     putKeep(panelExtracts,
-      el('h3', {}, 'Mon clip'),
-      S.extracts.length ? stepBar() : null,
-      S.extracts.length ? el('ol', { class: 'st-exlist' }, S.extracts.map(extractRow)) : el('p', { class: 'st-help' }, 'Ajoute un extrait ci-dessous : l’aperçu apparaît avec la vidéo.'),
-      el('p', { class: totalS() > LIMITS.maxTotalS ? 'st-total err' : 'st-total' }, S.extracts.length ? `Durée : ${minTotalNote()}` : ''),
       note,
-      el('h3', {}, S.suggestions.length ? `Extraits proposés par l’IA (${S.suggestions.length}, du plus au moins viral)` : 'Extraits proposés par l’IA'),
+      el('h3', {}, 'Extraits proposés par l’IA'),
       S.suggestions.length
-        ? el('ul', { class: 'st-sugg' }, S.suggestions.slice(0, suggShown).map((sg) =>
-            el('li', { class: 'st-card' },
+        ? el('ul', { class: 'st-sugg' }, S.suggestions.slice(0, suggShown).map((sg) => {
+            const on = cur?.from === sg.start_ms;
+            return el('li', { class: on ? 'st-card on' : 'st-card' },
               el('div', { class: 'st-card-head' }, el('strong', {}, sg.title), el('span', { class: 'badge ok', title: 'Potentiel viral estimé par l’IA' }, `${sg.score}/10`)),
               el('p', { class: 'st-why' }, sg.why),
               el('p', { class: 'st-meta' }, `${mmss(sg.start_ms)} → ${mmss(sg.end_ms)} · ${secs(sg.duration_s)}`),
               el('details', {}, el('summary', {}, 'Lire l’extrait'), el('p', { class: 'st-text' }, sg.text)),
               el('div', { class: 'st-card-actions' },
-                taken.has(sg.start_ms)
-                  ? el('button', { class: 'btn secondary small', type: 'button', 'data-k': `sg:${sg.start_ms}`, onclick: () => { const k = S.extracts.findIndex((e) => e.from === sg.start_ms); if (k >= 0) { S.extracts.splice(k, 1); extractsChanged(); } } }, 'Retirer de mon clip')
-                  : S.extracts.length
-                    ? [el('button', { class: 'btn small', type: 'button', 'data-k': `sg:${sg.start_ms}`, onclick: () => addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description, true) }, addLabel),
-                       el('button', { class: 'btn secondary small', type: 'button', 'data-k': `sga:${sg.start_ms}`, onclick: () => addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description) }, 'Ajouter à la suite')]
-                    : el('button', { class: 'btn small', type: 'button', 'data-k': `sg:${sg.start_ms}`, onclick: () => addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description) }, 'Utiliser cet extrait')),
-            )),
-          )
+                el('button', { class: on ? 'btn small st-picked' : 'btn small', type: 'button', 'aria-pressed': String(on), 'data-k': `sg:${sg.start_ms}`, onclick: () => !on && addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description, true) }, on ? '✓ Extrait choisi' : 'Utiliser cet extrait')));
+          }))
         : el('p', { class: 'st-help' }, 'Pas d’extrait proposé pour cette vidéo : choisis un passage dans la transcription.'),
       ...(S.suggestions.length > suggShown ? [el('button', { class: 'btn secondary small', type: 'button', onclick: () => { suggShown += 8; renderExtracts(); } }, `Voir ${Math.min(8, S.suggestions.length - suggShown)} extrait${S.suggestions.length - suggShown > 1 ? 's' : ''} de plus (${S.suggestions.length - suggShown} restant${S.suggestions.length - suggShown > 1 ? 's' : ''})`)] : []),
       el('h3', {}, 'Choisir un autre passage'),
-      el('p', { class: 'st-help' }, 'Touche une ligne : l’extrait démarre là (environ 25 s), puis ajuste le début et la fin au dixième de seconde (ou tape l’instant exact).'),
+      el('p', { class: 'st-help' }, 'Touche une ligne de la transcription : l’extrait démarre là (environ 25 secondes).'),
+      free ? el('p', { class: 'st-picked-note' }, `✓ Passage choisi : ${mmss(free.start_ms)} → ${mmss(free.end_ms)} (${secs(exDur(free))})`) : null,
       search,
       lineList,
     );
     renderLines();
-    if (justAdded) {
-      const i = S.extracts.indexOf(justAdded);
-      justAdded = null;
-      panelExtracts.querySelector(`[data-ex="${i}"]`)?.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-    }
   }
 
   // ============================================================ onglet Sous-titres
@@ -1938,6 +1819,7 @@ async function openEditor(youtubeId) {
   const fromClip = await draftFromLibrary();
   const restored = fromClip ? restoreDraft(fromClip) : restoreDraft();
   if (fromClip && restored) saveDraftNow();
+  if (S.extracts.length > 1) S.extracts = S.extracts.slice(0, 1); // un seul extrait : plus d'écran pour en gérer plusieurs (anciens brouillons)
   root.dataset.level = S.level ?? '';
   if (easy()) enterBeginner();
   renderPresets();
