@@ -234,7 +234,7 @@ qu'à choisir les extraits.
     le **même code** que le rendu (`public/js/studio-core.js`) : horaires des mots, groupes, tailles, réduction des mots trop
     longs. Vérifié image par image contre le MP4 final.
     Quand l'extrait change, l'aperçu s'arrête tout de suite, **revient à zéro** (curseur et temps compris) et affiche un grand rond qui
-    tourne avec « Préparation de l'aperçu… » jusqu'à ce que le nouveau soit prêt ; un simple changement de format garde la position de lecture.
+    tourne avec « Préparation de l'aperçu… » et « Il se passe quelque chose… » jusqu'à ce que le nouveau soit prêt ; un simple changement de format garde la position de lecture.
 - **Rendu** : ffmpeg sur le serveur, sous-titres incrustés (ASS/libass), musique mixée sous la voix, MP4 H.264 + AAC en 1080 × 1920
   (ou 720 × 1280). **File d'attente** (`STUDIO_CONCURRENCY` clips à la fois, 1 par défaut ; `STUDIO_MAX_QUEUE`), limites par visiteur
   (2 clips en cours, `STUDIO_RENDERS_PER_HOUR` par heure, `STUDIO_PREVIEWS_PER_HOUR` aperçus), progression, annulation. Les clips
