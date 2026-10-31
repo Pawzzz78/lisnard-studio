@@ -365,11 +365,12 @@ export function createPhone({ onMove, onCrop, onPick }) {
       const shift = `translate(${pos[1] === 'c' ? '-50%' : '0'},${pos[0] === 'm' ? '-50%' : '0'})`;
       logoImg.style.cssText = `${x};${y};width:${size * 100}%;opacity:${opacity};transform:${shift}`;
     },
-    /** Nouvelle vidéo d'aperçu (cadrage) ; on garde la position de lecture. */
-    setSource(url) {
-      const keep = video.currentTime || 0;
+    /** Nouvelle vidéo d'aperçu. On garde la position de lecture (cadrage modifié), sauf `reset` (autre extrait : on repart de zéro). */
+    setSource(url, { reset = false } = {}) {
+      const keep = reset ? 0 : video.currentTime || 0;
       const wasPlaying = !video.paused;
       if (video.getAttribute('src') === url) return;
+      if (reset) this.rewind();
       video.src = url;
       video.addEventListener('loadedmetadata', function once() {
         video.removeEventListener('loadedmetadata', once);
@@ -391,10 +392,21 @@ export function createPhone({ onMove, onCrop, onPick }) {
       }
       if (framing.fit !== 'crop') hint.hidden = true;
     },
-    setBusy(message, { soft = false, retry = null } = {}) {
+    /** Retour au début : l'aperçu en cours est celui d'un autre extrait. Le curseur et le temps repartent de zéro tout de suite. */
+    rewind() {
+      if (video.getAttribute('src')) video.currentTime = 0;
+      range.value = '0';
+      time.textContent = '0:00 / 0:00';
+      if (music.src) music.currentTime = 0;
+    },
+    /** Message sur l'aperçu ; `loading` : grand rond qui tourne et « Quelques secondes… » (préparation en cours, bien visible). */
+    setBusy(message, { retry = null, loading = false } = {}) {
       busy.hidden = !message;
-      busy.classList.toggle('soft', Boolean(message) && soft && !retry);
-      const kids = [el('span', {}, message ?? '')];
+      busy.classList.toggle('loading', Boolean(message) && loading && !retry);
+      const kids = [];
+      if (message && loading && !retry) kids.push(el('span', { class: 'ph-spinner', 'aria-hidden': 'true' }));
+      kids.push(el('span', { class: 'ph-busy-text' }, message ?? ''));
+      if (message && loading && !retry) kids.push(el('small', {}, 'Quelques secondes…'));
       if (message && retry) kids.push(el('button', { class: 'btn small', type: 'button', onclick: retry }, 'Réessayer'));
       busy.replaceChildren(...kids);
     },

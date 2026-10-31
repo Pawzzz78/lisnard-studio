@@ -60,7 +60,7 @@
 @keyframes st-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 .ph-play { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); width: 3.2rem; height: 3.2rem; border: 0; border-radius: 50%; background: rgba(255,255,255,.92); color: var(--color-primary); font-size: 1.2rem; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
 .ph-play[hidden] { display: none; }
-.ph-busy { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.5rem; text-align: center; background: rgba(13,15,43,.72); color: #fff; font-weight: 700; font-size: .9rem; }
+.ph-busy { position: absolute; inset: 0; display: grid; place-items: center; padding: 1.2rem; text-align: center; background: rgba(13,15,43,.72); color: #fff; font-weight: 700; font-size: .9rem; }
 .ph-busy[hidden], .ph-guides[hidden] { display: none; }
 .ph-guides { position: absolute; inset: 0; pointer-events: none; }
 .ph-guides span { position: absolute; left: 0; right: 0; display: grid; place-items: center; font-size: .6rem; color: #fff; background: repeating-linear-gradient(135deg, rgba(254,44,85,.35) 0 6px, rgba(254,44,85,.2) 6px 12px); text-transform: uppercase; letter-spacing: .06em; }
@@ -334,7 +334,12 @@
 .st-nextbar[hidden] { display: none; }
 .st-card-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .ph-busy { display: grid; align-content: center; justify-items: center; gap: .8rem; }
-.ph-busy.soft { inset: auto; left: .6rem; right: .6rem; top: .6rem; padding: .35rem .7rem; border-radius: var(--radius-pill); font-size: .72rem; pointer-events: none; }
+.ph-busy.loading { background: rgba(13,15,43,.9); font-size: 1.1rem; line-height: 1.3; gap: .7rem; }
+.ph-busy:not([hidden]) ~ .ph-play { visibility: hidden; } /* pas de bouton ▶ par-dessus le message */
+.ph-spinner { width: 3.2rem; height: 3.2rem; border-radius: 50%; border: .32rem solid rgba(255,255,255,.22); border-top-color: #fff; border-right-color: var(--color-accent); animation: ph-spin .85s linear infinite; }
+.ph-busy small { font-size: .78rem; font-weight: 600; color: var(--ne-chamois-light); }
+@keyframes ph-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ph-spinner { animation: ph-pulse 1.4s ease-in-out infinite; } @keyframes ph-pulse { 50% { opacity: .35; } } }
 .ph-play.playing { opacity: 0; }
 .ph-play.playing:focus-visible, .ph-screen:hover .ph-play.playing { opacity: 1; }
 @media (max-width: 900px) { .st-nextbar { padding: 0 1rem 1.4rem; flex-direction: column-reverse; align-items: stretch; } .st-nextbar .btn { width: 100%; } .st-next-note { text-align: center; } }
