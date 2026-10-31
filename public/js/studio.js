@@ -472,6 +472,14 @@ async function openEditor(youtubeId) {
     phone.setAudio({ url: track ? track.url : null, volume: S.music.volume, voice: S.voice });
   }
   let previewKey = '';
+  /** L'extrait vient de changer : l'aperçu affiché n'est plus le bon. On l'arrête, on le remet à zéro et on le dit tout de suite, sans attendre la demande au serveur. */
+  function previewStale() {
+    if (!S.extracts.length || !phone.hasSource() || JSON.stringify(S.extracts.map(exMs)) === shownExtracts) return;
+    phone.pause();
+    phone.rewind();
+    phone.setBusy('Préparation de l’aperçu…', { loading: true });
+  }
+  let shownExtracts = ''; // extraits de l'aperçu affiché : un autre extrait repart de zéro, un simple changement de cadrage garde la position
   async function requestPreview(force = false) {
     const mine = ++S.ticket;
     refreshFraming();
@@ -486,13 +494,20 @@ async function openEditor(youtubeId) {
       phone.setBusy(null);
       return;
     }
-    phone.setBusy('Préparation de l’aperçu…', { soft: phone.hasSource() });
+    const extractsKey = JSON.stringify(body.extracts);
+    const changed = extractsKey !== shownExtracts;
+    if (changed && phone.hasSource()) {
+      phone.pause(); // l'ancien aperçu n'est plus le bon : il s'arrête et revient à zéro sous le message
+      phone.rewind();
+    }
+    phone.setBusy('Préparation de l’aperçu…', { loading: true });
     try {
       const r = await api('POST', '/preview', body);
       if (mine !== S.ticket) return;
       previewKey = key;
+      shownExtracts = extractsKey;
       phone.setBusy(null);
-      phone.setSource(r.url);
+      phone.setSource(r.url, { reset: changed });
     } catch (e) {
       if (mine === S.ticket && !e.gate) phone.setBusy(e.message, { retry: () => requestPreview(true) });
     }
@@ -530,6 +545,7 @@ async function openEditor(youtubeId) {
     rebuildSubtitles();
     renderExtracts();
     renderTextEditor();
+    previewStale();
     schedulePreview(fine ? 1400 : 450);
     renderCreateSummary();
     syncNav();
