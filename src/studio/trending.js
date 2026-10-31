@@ -35,8 +35,10 @@ export function trendingConfig(env = process.env) {
     country: String(env.TRENDING_COUNTRY || 'FR').toUpperCase().slice(0, 2),
     count: num(env.TRENDING_COUNT, 100, 1, 100),
     sampleVideos: num(env.TRENDING_SAMPLE_VIDEOS, 3000, 30, 3000), // vidéos lues pour classer les sons (environ 0,06 $ pour 1 000)
-    commercialOnly: on(env.TRENDING_COMMERCIAL_ONLY, true), // seulement les sons que TikTok marque « usage commercial »
+    commercialOnly: on(env.TRENDING_COMMERCIAL_ONLY, false), // true : seulement les sons que TikTok marque « usage commercial » (par défaut tous : l'exploitant a les droits)
     songsOnly: on(env.TRENDING_SONGS_ONLY, true), // pas les « sons originaux » (voix de créateurs) : on veut de la musique
+    // catégories de l'Explorer TikTok lues pour établir le classement : plus il y en a, plus on trouve de sons différents (un coût de 0,06 $ pour 1 000 vidéos lues)
+    categories: String(env.TRENDING_CATEGORIES || 'All,Singing & Dancing,Lipsync,Comedy,Daily Life').split(',').map((c) => c.trim()).filter(Boolean),
     extraHosts: String(env.EXTRA_AUDIO_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean),
     maxRunMs: 20 * 60 * 1000,
     pollMs: 5000,
@@ -93,7 +95,7 @@ async function apify(cfg, fetchImpl, method, path, body) {
 export async function fetchTrending(cfg, { fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const input = {
     countries: [cfg.country],
-    categories: ['All'],
+    categories: cfg.categories,
     sampleVideos: cfg.sampleVideos,
     maxSounds: cfg.count,
     commercialOnly: cfg.commercialOnly,
@@ -116,6 +118,9 @@ export async function fetchTrending(cfg, { fetchImpl = fetch, sleep = (ms) => ne
   if (!Array.isArray(items)) throw new Error('Réponse Apify inattendue.');
   return items;
 }
+
+/** Réglages qui changent le classement : s'ils changent, on actualise sans attendre la semaine. */
+export const signatureOf = (cfg) => JSON.stringify([cfg.country, cfg.count, cfg.sampleVideos, cfg.commercialOnly, cfg.songsOnly, cfg.categories, cfg.actor]);
 
 const text = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -216,7 +221,7 @@ export async function refreshTrending({ cfg = trendingConfig(), fetchImpl = fetc
     const removed = await purgeOldTrending();
     await reloadMusic();
     const result = { added, total: ranked.length, failed, removed, at: new Date().toISOString() };
-    await writeState({ status: 'ok', last_ok_at: result.at, last_result: result, last_error: null, last_error_at: null });
+    await writeState({ status: 'ok', last_ok_at: result.at, last_result: result, signature: signatureOf(cfg), last_error: null, last_error_at: null });
     return result;
   } catch (e) {
     await writeState({ status: 'error', last_error: e.message, last_error_at: new Date().toISOString() }).catch(() => {});
@@ -238,7 +243,7 @@ export async function dueNow(cfg = trendingConfig(), now = Date.now()) {
   if (!cfg.token || cfg.off) return false;
   const st = await readState();
   if (st.status === 'running' && now - (Date.parse(st.started_at ?? '') || 0) < STALE_RUN_MS) return false;
-  if (st.last_ok_at && now - (Date.parse(st.last_ok_at) || 0) < WEEK_MS) return false;
+  if (st.last_ok_at && now - (Date.parse(st.last_ok_at) || 0) < WEEK_MS && st.signature === signatureOf(cfg)) return false;
   if (st.last_error_at && now - (Date.parse(st.last_error_at) || 0) < RETRY_AFTER_ERROR_MS) return false;
   return true;
 }

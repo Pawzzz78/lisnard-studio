@@ -27,7 +27,7 @@ const item = (n, extra = {}) => ({ position: n, musicId: `s${n}x`, musicTitle: `
 /** Faux Apify + faux serveur audio. `items` : le classement ; `calls` : toutes les requêtes. */
 const fakeFetch = (items, { runStatus = 'SUCCEEDED', calls = [], audioStatus = 200 } = {}) => async (url, init = {}) => {
   const u = new URL(url);
-  calls.push({ method: init.method ?? 'GET', url: String(url), auth: init.headers?.Authorization });
+  calls.push({ method: init.method ?? 'GET', url: String(url), auth: init.headers?.Authorization, body: String(init.body ?? '') });
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   if (u.hostname === 'api.apify.com') {
     if (init.headers?.Authorization !== 'Bearer tok-test') return json({}, 401);
@@ -69,15 +69,18 @@ test('configuration : sans jeton la fonction est inactive, valeurs par défaut s
   const c = T.trendingConfig({});
   assert.equal(c.token, '');
   const on = T.trendingConfig({ APIFY_TOKEN: ' abc ' });
-  assert.deepEqual([on.token, on.country, on.count, on.commercialOnly, on.songsOnly, on.actor], ['abc', 'FR', 100, true, true, 's_actors~tiktok-trending-sounds-scraper']);
+  assert.deepEqual([on.token, on.country, on.count, on.commercialOnly, on.songsOnly, on.actor], ['abc', 'FR', 100, false, true, 's_actors~tiktok-trending-sounds-scraper']);
+  assert.deepEqual(on.categories, ['All', 'Singing & Dancing', 'Lipsync', 'Comedy', 'Daily Life']);
   assert.equal(T.trendingConfig({ APIFY_TOKEN: 'a', TRENDING_COUNT: '500' }).count, 100);
-  assert.equal(T.trendingConfig({ APIFY_TOKEN: 'a', TRENDING_COMMERCIAL_ONLY: 'off' }).commercialOnly, false);
+  assert.equal(T.trendingConfig({ APIFY_TOKEN: 'a', TRENDING_COMMERCIAL_ONLY: '1' }).commercialOnly, true);
 });
 
 test('classement : doublons, sons non commerciaux, sons originaux et sons sans fichier écartés', () => {
   const c = T.trendingConfig({ APIFY_TOKEN: 'a' });
-  const out = T.normalizeSounds([item(3), item(1), item(2, { musicIsCommercial: false }), item(1), item(4, { musicIsOriginal: true }), item(5, { musicAudioUrl: undefined }), item(6, { musicAudioUrl: 'http://x/a.mp3' }), { musicId: '??', musicTitle: 'x' }, null], c);
-  assert.deepEqual(out.map((s) => [s.id, s.rank]), [['s1x', 1], ['s3x', 2]]);
+  const list = [item(3), item(1), item(2, { musicIsCommercial: false }), item(1), item(4, { musicIsOriginal: true }), item(5, { musicAudioUrl: undefined }), item(6, { musicAudioUrl: 'http://x/a.mp3' }), { musicId: '??', musicTitle: 'x' }, null];
+  // par défaut, les sons non « commerciaux » sont gardés aussi (l'exploitant a les droits)
+  assert.deepEqual(T.normalizeSounds(list, c).map((s) => [s.id, s.rank]), [['s1x', 1], ['s2x', 2], ['s3x', 3]]);
+  assert.deepEqual(T.normalizeSounds(list, { ...c, commercialOnly: true }).map((s) => [s.id, s.rank]), [['s1x', 1], ['s3x', 2]]);
   assert.equal(T.normalizeSounds([item(1)], { ...c, count: 1 }).length, 1);
 });
 
@@ -94,6 +97,7 @@ test('actualisation : télécharge, convertit, classe ; seul Apify reçoit le je
   assert.equal(M.publicTracks()[0].category, 'tendance', 'les tendances passent avant le reste');
   for (const c of calls) assert.equal(Boolean(c.auth), new URL(c.url).hostname === 'api.apify.com', `jeton uniquement pour Apify : ${c.url}`);
   const run = calls.find((c) => c.method === 'POST');
+  assert.ok(run.body.includes('Lipsync') && run.body.includes('"commercialOnly":false'));
   assert.match(run.url, /acts\/s_actors~tiktok-trending-sounds-scraper\/runs/);
   const st = await T.trendingStatus(cfg());
   assert.deepEqual([st.available, st.running, st.live], [true, false, 6]);
@@ -159,8 +163,9 @@ test('calendrier : une fois par semaine, nouvel essai 6 h après une erreur, jam
   assert.equal(await T.dueNow(T.trendingConfig({}), now), false, 'sans jeton');
   await set({});
   assert.equal(await T.dueNow(cfg(), now), true, 'jamais fait');
-  await set({ status: 'ok', last_ok_at: iso(6 * 24 * H) });
+  await set({ status: 'ok', last_ok_at: iso(6 * 24 * H), signature: T.signatureOf(cfg()) });
   assert.equal(await T.dueNow(cfg(), now), false, 'moins d\'une semaine');
+  assert.equal(await T.dueNow(cfg({ commercialOnly: true }), now), true, 'réglages changés : on actualise tout de suite');
   await set({ status: 'ok', last_ok_at: iso(7 * 24 * H + 1000) });
   assert.equal(await T.dueNow(cfg(), now), true, 'plus d\'une semaine');
   await set({ status: 'error', last_ok_at: iso(9 * 24 * H), last_error_at: iso(2 * H) });

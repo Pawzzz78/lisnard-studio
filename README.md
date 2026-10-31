@@ -108,19 +108,20 @@ qu'à choisir les extraits.
 - **Sons tendance TikTok** (catégorie « Tendances » du studio, en tête de la liste) : **une fois par semaine**, l'acteur Apify
   `s_actors/tiktok-trending-sounds-scraper` donne les sons les plus utilisés du moment en France (classés par nombre de vidéos qui les
   utilisent). Les 100 premiers sont téléchargés, convertis comme les autres morceaux (MP3, volume égalisé) et rangés dans la bibliothèque
-  (`studio_music`, `source = 'tiktok'`, colonnes `external_id`, `rank`, `last_seen_at`). Seuls les sons que TikTok marque « usage commercial » et
-  qui sont de vraies chansons (pas les « sons originaux » de créateurs) sont gardés. L'exploitant a l'accord de TikTok pour ces sons. Un son
+  (`studio_music`, `source = 'tiktok'`, colonnes `external_id`, `rank`, `last_seen_at`). Tous les sons sont gardés, « usage commercial » ou non (l'exploitant a
+  les droits), sauf les « sons originaux » de créateurs (voix, pas de la musique). Pour trouver assez de sons différents, le classement s'appuie sur
+  plusieurs catégories de l'Explorer TikTok (`TRENDING_CATEGORIES`, 5 par défaut : environ 0,6 $ par actualisation). L'exploitant a l'accord de TikTok pour ces sons. Un son
   déjà présent n'est pas retéléchargé (seul son rang change) ; un son qui sort du classement n'est plus proposé mais son fichier reste 14 jours
   (un brouillon ou un rendu en cours qui l'utilise continue de marcher), puis il est supprimé. Si Apify échoue (jeton refusé, crédit épuisé,
   classement trop pauvre), l'ancien classement reste en place et l'erreur s'affiche dans l'admin ; nouvel essai automatique 6 h plus tard.
   Dans l'admin (« Musique » → « Tendances TikTok ») : date de la dernière actualisation, bouton **Actualiser maintenant** (quelques minutes, en
   arrière-plan) et liste des sons, où l'on peut en **masquer** un (il le reste après les actualisations suivantes). Coût Apify : environ
-  0,2 $ par actualisation. Le calendrier est mémorisé dans la base (réglage `trending_sounds`) : un redémarrage ne relance rien, et la première
+  0,6 $ par actualisation. Le calendrier est mémorisé dans la base (réglage `trending_sounds`) : un redémarrage ne relance rien (sauf si les réglages du classement ont changé : l'actualisation a alors lieu tout de suite), et la première
   actualisation a lieu au premier démarrage avec un jeton. Code : `src/studio/trending.js` (aperçu des appels : l'acteur est lancé, on attend
   sa fin, puis on lit son résultat ; le jeton n'est envoyé qu'à `api.apify.com`, et les fichiers audio ne sont téléchargés que depuis les
   serveurs d'Apify et de TikTok). Réglages (variables d'environnement) : `APIFY_TOKEN` (**obligatoire**, jamais dans le dépôt ; sans lui la
   fonction est inactive), `TRENDING_SOUNDS=off` (coupure), `TRENDING_COUNTRY` (`FR`), `TRENDING_COUNT` (100), `TRENDING_SAMPLE_VIDEOS` (3000
-  vidéos lues pour établir le classement), `TRENDING_COMMERCIAL_ONLY=0` et `TRENDING_SONGS_ONLY=0` (assouplir les filtres),
+  vidéos lues pour établir le classement), `TRENDING_COMMERCIAL_ONLY=1` (ne garder que les sons « usage commercial ») et `TRENDING_SONGS_ONLY=0` (garder aussi les sons originaux), `TRENDING_CATEGORIES` (liste séparée par des virgules),
   `APIFY_TRENDING_ACTOR`, `EXTRA_AUDIO_HOSTS` (serveurs audio supplémentaires, séparés par des virgules).
 - **Bouton « Publier sur TikTok »** (une fois le clip prêt) : sur téléphone, la vidéo est **préchargée dès qu'elle est prête** (le
   navigateur n'autorise le partage que dans la seconde qui suit le clic : télécharger le fichier après le clic le faisait échouer) ; le
