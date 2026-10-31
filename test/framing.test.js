@@ -1,7 +1,7 @@
 // Cadrage automatique : trajectoire du cadre à partir des visages détectés (module pur).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FRAMING, cropXAt, cropXAtClip, cropXExpr, faceTracks, framingForClip, framingForExtract, framingPath, pickTrack, splitShots, windowWidth } from '../public/js/framing.js';
+import { FRAMING, cropXAt, cropXAtClip, cropXExpr, faceTracks, framingForClip, framingForExtract, framingPath, panelWindow, pickPair, pickTrack, splitAtClip, splitShots, windowWidth } from '../public/js/framing.js';
 
 const ASPECT = 16 / 9;
 const CW = windowWidth(ASPECT);
@@ -240,4 +240,118 @@ test('suivi des visages : un visage qui passe derrière un autre garde son ident
   assert.equal(tracks.length, 2);
   assert.ok(pickTrack(tracks, 'left').meanX < 0.5 && pickTrack(tracks, 'right').meanX > 0.5);
   assert.equal(framingPath(pickTrack(tracks, 'left'), 0, 20, ASPECT).at(-1).t, 20);
+});
+
+// --- deux panneaux : la personne suivie en haut, l'autre en bas, quand le visage suivi n'est pas repéré partout ---------------------
+
+/** Deux personnes assises côte à côte (gauche : cxL, droite : cxR) ; `lost(t)` : l'instant où la personne de droite n'est pas repérée. */
+const twoShot = (seconds, { lost = () => false, lostLeft = () => false, sizeR = 0.09, sizeL = 0.07, cxL = 0.3, cxR = 0.7 } = {}) =>
+  video(seconds, (t) => [lostLeft(t) ? [null] : [cxL, sizeL], lost(t) ? [null] : [cxR, sizeR]]);
+
+test('deux panneaux : visage suivi repéré partout = cadrage simple, rien de plus', () => {
+  const r = range(twoShot(30), 0, 30000);
+  assert.equal(r.plan, null);
+  assert.equal(r.splitShare, 0);
+  assert.equal(r.coverage, 1);
+});
+
+test('deux panneaux : visage suivi perdu par moments + une deuxième personne = écran coupé en deux, la personne suivie en haut', () => {
+  const lost = (t) => t % 10 >= 7; // perdue 3 s sur 10
+  const frames = twoShot(30, { lost });
+  const r = range(frames, 0, 30000);
+  assert.ok(r.plan, 'un plan à deux panneaux');
+  assert.deepEqual(r.plan.windows, [[0, 30]]);
+  assert.equal(r.splitShare, 1);
+  // la personne suivie (la plus grosse : celle de droite) en haut, l'autre (à gauche) en bas
+  const xTop = cropXAt(r.plan.top.keys, 15);
+  const xBottom = cropXAt(r.plan.bottom.keys, 15);
+  assert.ok(xTop > xBottom, `haut ${xTop}, bas ${xBottom}`);
+  const near = (panel, cx) => Math.abs(panel.x - (cx - panel.fw / 2) / (1 - panel.fw)) < 0.03;
+  assert.ok(near({ x: xTop, fw: r.plan.top.fw }, 0.7), `le haut est centré sur la personne de droite (${xTop})`);
+  assert.ok(near({ x: xBottom, fw: r.plan.bottom.fw }, 0.3), `le bas est centré sur la personne de gauche (${xBottom})`);
+  // une fenêtre 9:8 qui tient dans la source : largeur et hauteur en fractions, entre les bornes
+  for (const p of [r.plan.top, r.plan.bottom]) {
+    assert.ok(p.fw >= FRAMING.splitMinW - 1e-9 && p.fh <= 1 + 1e-9 && p.cy - p.fh / 2 >= -1e-9 && p.cy + p.fh / 2 <= 1 + 1e-9, JSON.stringify(p));
+    assert.ok(Math.abs((p.fw * ASPECT) / p.fh - 9 / 8) < 0.01, 'format 9:8');
+  }
+  // « repéré à 100 % » : en deux panneaux, rien n'est perdu
+  assert.equal(r.coverage, 1);
+  // les points-clés restent dans le segment ; l'expression ffmpeg est calculable
+  assert.ok(r.plan.top.keys.every((k) => k.x >= 0 && k.x <= 1));
+  assert.ok(Math.abs(evalExpr(cropXExpr(r.plan.top.keys), 15) - xTop) < 1e-3);
+});
+
+test('deux panneaux : sans deuxième personne, le cadrage simple reste (rien à mettre en bas)', () => {
+  const r = range(video(30, (t) => [t % 10 >= 7 ? [null] : [0.7]]), 0, 30000);
+  assert.equal(r.plan, null);
+  assert.ok(r.coverage < 0.95);
+});
+
+test('deux panneaux : un second visage qui n\'est jamais vu avec le premier n\'est pas « une autre personne »', () => {
+  // la même personne perdue puis retrouvée ailleurs (plus de 6 s plus tard) : deux pistes, mais jamais ensemble
+  const frames = video(40, (t) => (t < 14 ? [[0.3]] : t < 22 ? [[null]] : [[0.6]]));
+  const r = range(frames, 0, 40000);
+  assert.equal(r.plan, null);
+});
+
+test('deux panneaux : seuls les plans concernés sont coupés en deux, les autres gardent le cadre simple', () => {
+  // plan 1 (0–15 s) : deux personnes, la personne suivie souvent perdue ; coupe à 15 s ; plan 2 : la personne seule, bien repérée
+  const frames = video(30, (t) => (t < 15 ? [t % 6 >= 4 ? [null] : [0.7, 0.09], [0.3, 0.07]] : [[0.5, 0.09]]));
+  const r = range(frames, 0, 30000, 'auto', [15]);
+  assert.deepEqual(r.plan.windows, [[0, 15]]);
+  assert.equal(r.splitShare, 0.5);
+  // hors du plan coupé en deux, le cadre des panneaux est tenu immobile
+  assert.equal(cropXAt(r.plan.top.keys, 20), cropXAt(r.plan.top.keys, 28));
+  // et le cadrage simple suit la personne du plan 2
+  assert.ok(Math.abs(cropXAt(r.keys, 25) - toX(0.5)) < 0.02);
+});
+
+test('deux panneaux : l\'instant et les panneaux du clip (aperçu et rendu lisent la même chose)', () => {
+  const frames = twoShot(30, { lost: (t) => t % 10 >= 7 });
+  const clip = framingForClip({ frames, fps: 1, aspect: ASPECT, extracts: [{ start_ms: 0, end_ms: 20000 }, { start_ms: 5000, end_ms: 15000 }] });
+  assert.equal(clip.split, 1);
+  assert.equal(clip.missing, 0);
+  const at = splitAtClip(clip.segments, 25); // deuxième extrait, 5 s après son début
+  assert.ok(at && at.top.x > at.bottom.x);
+  assert.deepEqual(Object.keys(at.top).sort(), ['cy', 'fh', 'fw', 'x']);
+  assert.equal(splitAtClip(null, 3), null);
+});
+
+test('deux panneaux : visage suivi vu la moitié du temps seulement : seul il est mal cadré, avec une deuxième personne il est complété', () => {
+  const lost = (t) => t % 10 >= 5; // la personne suivie (celle de droite) n'est repérée que la moitié du temps
+  const extracts = [{ start_ms: 0, end_ms: 30000 }];
+  const alone = framingForClip({ frames: video(40, (t) => [lost(t) ? [null] : [0.7, 0.09]]), fps: 1, aspect: ASPECT, extracts, subject: 'right' });
+  assert.deepEqual([alone.segments[0].plan, alone.coverage < 0.6], [null, true]);
+  const clip = framingForClip({ frames: twoShot(40, { lost }), fps: 1, aspect: ASPECT, extracts, subject: 'right' });
+  assert.ok(clip.segments[0].plan, 'écran coupé en deux');
+  assert.deepEqual([clip.missing, clip.coverage, clip.split], [0, 1, 1]);
+});
+
+test('fenêtre d\'un panneau : plus le visage est petit, plus on zoome, dans les bornes ; format 9:8 ; jamais hors de l\'image', () => {
+  const tr = (w, cy) => ({ pts: Array.from({ length: 5 }, (_, i) => ({ t: i, cx: 0.5, cy, h: w * ASPECT, s: 0.9, w, fi: i, di: 0 })) });
+  const big = panelWindow([tr(0.3, 0.4)], ASPECT);
+  const small = panelWindow([tr(0.05, 0.4)], ASPECT);
+  assert.ok(big.fw > small.fw);
+  assert.equal(small.fw, FRAMING.splitMinW);
+  assert.ok(big.fw <= FRAMING.splitMaxW);
+  // un visage tout en haut : la fenêtre reste dans l'image
+  const top = panelWindow([tr(0.08, 0.02)], ASPECT);
+  assert.ok(top.cy - top.fh / 2 >= -1e-9);
+  // source plus carrée (4:3) : la fenêtre 9:8 peut être plus large sans dépasser la hauteur
+  const square = panelWindow([tr(0.5, 0.5)], 4 / 3);
+  assert.ok(square.fh <= 1 + 1e-9 && Math.abs((square.fw * (4 / 3)) / square.fh - 9 / 8) < 0.01);
+});
+
+test('paire de personnes : « lisnard » en haut quand il est reconnu, l\'autre en bas', () => {
+  const frames = twoShot(30);
+  const ident = new Map();
+  for (let i = 0; i <= 30; i++) {
+    ident.set(`${i}:0`, 0.1); // première détection de chaque image : celle de gauche (triée par taille décroissante : la droite est plus grosse…)
+    ident.set(`${i}:1`, 0.1);
+  }
+  const tracks = faceTracks(frames, 1, ASPECT, 0, 30, null);
+  const pair = pickPair(tracks, 'auto');
+  assert.ok(pair.top.meanX > pair.bottom.meanX, 'sans reconnaissance, le plus gros en haut');
+  const left = pickPair(tracks, 'left');
+  assert.ok(left.top.meanX < left.bottom.meanX, 'à gauche choisi : la personne de gauche en haut');
 });

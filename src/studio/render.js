@@ -175,15 +175,32 @@ export function normalizeBroll(input, total) {
 const esc = escFilterPath;
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
 
-/** `keys` : trajectoire du cadre (cadrage automatique) de cet extrait, ou null pour le cadre manuel. */
-function layoutChain(i, { w, h }, layout, kind, keys = null) {
+/**
+ * `seg` : cadrage automatique de cet extrait ({ keys, plan }), ou null pour le cadre manuel. `keys` : trajectoire du cadre ; `plan` : dans
+ * certains plans, l'écran est coupé en deux (la personne suivie en haut, l'autre en bas) quand le visage suivi n'est pas repéré partout.
+ */
+function layoutChain(i, { w, h }, layout, kind, seg = null) {
+  const keys = seg?.keys ?? null;
   const flip = kind === 'final' && layout.mirror ? ',hflip' : ''; // l'aperçu est retourné par le navigateur, instantanément
   if (layout.fit === 'crop') {
     // Aperçu : la vidéo entière à la hauteur de l'écran, SANS recadrage : le navigateur la recadre en direct (glissement du doigt)
     // avec la même formule que le rendu : décalage = (largeur de la vidéo − largeur de l'écran) × cropX.
     if (kind === 'preview') return `[${i}:v]fps=30,scale=-2:${h},setsar=1[v${i}]`;
     // cadrage automatique : la position change à chaque image (variable t) ; exact=1 pour un décalage au pixel près, sans à-coups
-    if (keys) return `[${i}:v]fps=30,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}:x='(iw-ow)*(${cropXExpr(keys)})':y='(ih-oh)*0.5':exact=1,setsar=1${flip}[v${i}]`;
+    const follow = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}:x='(iw-ow)*(${cropXExpr(keys ?? [{ t: 0, x: 0.5 }])})':y='(ih-oh)*0.5':exact=1,setsar=1`;
+    if (keys && seg.plan) {
+      // deux panneaux 9:8, un par personne (fenêtre propre à chacune, qui la suit), posés par-dessus le cadrage simple pendant les plans concernés
+      const { plan } = seg;
+      const half = even(h / 2);
+      const panel = (src, p, out) => `[${src}]crop=w='iw*${p.fw}':h='ih*${p.fh}':x='(iw-ow)*(${cropXExpr(p.keys)})':y='ih*${p.cy}-oh/2':exact=1,scale=${w}:${half}:flags=lanczos,setsar=1[${out}]`;
+      const enable = plan.windows.map(([a, b]) => `between(t,${a},${b})`).join('+');
+      return (
+        `[${i}:v]fps=30,split=3[f${i}][t${i}][u${i}];` +
+        `[f${i}]${follow}[m${i}];${panel(`t${i}`, plan.top, `pt${i}`)};${panel(`u${i}`, plan.bottom, `pb${i}`)};` +
+        `[pt${i}][pb${i}]vstack=inputs=2[vs${i}];[m${i}][vs${i}]overlay=0:0:enable='${enable}',setsar=1${flip}[v${i}]`
+      );
+    }
+    if (keys) return `[${i}:v]fps=30,${follow}${flip}[v${i}]`;
     return `[${i}:v]fps=30,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}:(iw-ow)*${layout.cropX}:(ih-oh)*0.5,setsar=1${flip}[v${i}]`;
   }
   // « fit » : la vidéo entière, centrée, sur un fond flou fait avec elle-même (calculé en petit pour rester rapide)
@@ -221,7 +238,7 @@ export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'fin
   const f = [];
   req.extracts.forEach((e, i) => {
     const dur = (e.end_ms - e.start_ms) / 1000;
-    f.push(layoutChain(i, size, req.layout, kind, kind === 'final' ? req.framing?.segments?.[i]?.keys ?? null : null));
+    f.push(layoutChain(i, size, req.layout, kind, kind === 'final' ? req.framing?.segments?.[i] ?? null : null));
     f.push(
       hasAudio
         ? `[${i}:a]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=0:${dur},asetpts=PTS-STARTPTS[a${i}]`

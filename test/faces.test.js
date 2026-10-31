@@ -211,7 +211,73 @@ test('cadrage automatique indisponible sans analyse : le cadre manuel s\'appliqu
   assert.equal((await call('GET', `/api/admin/videos/${videoId}/clips`)).body.faces.status, 'none');
   assert.equal((await call('GET', `/api/studio/videos/${YT}`)).body.faces.ready, false);
   const r = await call('POST', '/api/studio/framing', { youtube_id: YT, extracts: [{ start_ms: 2000, end_ms: 28000 }] });
-  assert.deepEqual(r.body, { segments: null, faces: 0, coverage: 0, crowded: 0, recognized: 0, ident_best: null, reason: 'none', missing: 1 });
+  assert.deepEqual(r.body, { segments: null, faces: 0, coverage: 0, split: 0, crowded: 0, recognized: 0, ident_best: null, reason: 'none', missing: 1 });
   const job = await call('POST', '/api/studio/render', { youtube_id: YT, extracts: [{ start_ms: 2000, end_ms: 8000 }], music: null, layout: { fit: 'crop', cropX: 0.5, quality: 'fast', follow: { on: true } } });
   assert.equal(job.status, 202); // le rendu part quand même, avec le cadre manuel
+});
+
+test('deux panneaux : visage suivi mal repéré + une deuxième personne = écran coupé en deux, chacune cadrée, jamais dans le vide', { skip: !enabled }, async () => {
+  const YT2 = 'FACtest_002';
+  const file = path.join(process.env.STORAGE_DIR, 'videos', `${YT2}.mp4`);
+  const face = new URL('./fixtures/face.jpg', import.meta.url).pathname;
+  // deux personnes côte à côte (gauche et droite), toujours à l'écran, sans coupe
+  execFileSync('ffmpeg', ['-v', 'error', '-y',
+    '-f', 'lavfi', '-i', 'color=c=0x203040:s=1280x720:r=10:d=20', '-loop', '1', '-framerate', '10', '-i', face, '-loop', '1', '-framerate', '10', '-i', face,
+    '-f', 'lavfi', '-i', 'sine=frequency=300:duration=20',
+    '-filter_complex', '[1:v]scale=-2:250[a];[2:v]scale=-2:250,hflip[b];[0:v][a]overlay=x=230:y=220:shortest=1[t];[t][b]overlay=x=830:y=220:shortest=1,format=yuv420p[v]',
+    '-map', '[v]', '-map', '3:a', '-c:v', 'libx264', '-c:a', 'aac', '-t', '20', file]);
+  const { rows } = await pool.query(
+    `INSERT INTO videos (youtube_id, title, channel, published_at, source, lang, duration_s, file_name, file_size, file_duration_s, file_width, file_height, file_has_audio, file_uploaded_at, clips_enabled)
+     VALUES ($1, 'Interview à deux', 'Chaîne', '2025-03-01', 'manual', 'fr', 20, $2, 1000, 20, 1280, 720, TRUE, now(), TRUE) RETURNING id`,
+    [YT2, `${YT2}.mp4`],
+  );
+  const id = rows[0].id;
+  try {
+    await pool.query('INSERT INTO segments (video_id, position, start_ms, duration_ms, text) SELECT $1, i, i * 1000, 950, \'Ligne \' || i FROM generate_series(0, 19) i', [id]);
+    await pool.query('UPDATE videos SET norm_text = \'ligne\' WHERE id = $1', [id]);
+    assert.equal((await call('POST', `/api/admin/videos/${id}/faces`)).status, 200);
+    await waitFor(async () => {
+      const r = await call('GET', `/api/admin/videos/${id}/clips`);
+      assert.notEqual(r.body.faces.status, 'failed', JSON.stringify(r.body.faces));
+      return r.body.faces.status === 'ready';
+    });
+    const { rows: data } = await pool.query('SELECT content FROM video_faces WHERE video_id = $1', [id]);
+    const frames = data[0].content.frames;
+    assert.ok(frames.every((f) => f.length === 2), 'les deux personnes sont détectées partout au départ');
+    // la personne de droite (la plus grosse) n'est plus repérée entre 7 s et 10 s, 17 s et 20 s : elle est pourtant toujours là sur l'image
+    const fps = data[0].content.fps;
+    data[0].content.frames = frames.map((f, i) => ((i / fps) % 10 >= 7 ? f.filter((d) => d[0] + d[2] / 2 < 0.5) : f));
+    await pool.query('UPDATE video_faces SET content = $2 WHERE video_id = $1', [id, JSON.stringify(data[0].content)]);
+
+    const body = { youtube_id: YT2, extracts: [{ start_ms: 0, end_ms: 20000 }], subject: 'right' };
+    const fr = await call('POST', '/api/studio/framing', body);
+    assert.equal(fr.status, 200, JSON.stringify(fr.body));
+    assert.ok(fr.body.split > 0.9, `écran coupé en deux sur ${fr.body.split} du clip`);
+    assert.equal(fr.body.coverage, 1);
+    assert.ok(fr.body.segments[0].plan, 'un plan à deux panneaux');
+
+    const r = await call('POST', '/api/studio/render', { ...body, music: null, style: { preset: 'hormozi' }, layout: { fit: 'crop', cropX: 0.5, quality: 'fast', follow: { on: true, subject: 'right' } } });
+    assert.equal(r.status, 202, JSON.stringify(r.body));
+    const job = await waitFor(async () => {
+      const s = (await call('GET', `/api/studio/render/${r.body.id}`)).body;
+      assert.notEqual(s.status, 'failed', s.error);
+      return s.status === 'done' ? s : null;
+    });
+    const out = path.join(dir, 'out-split.mp4');
+    await fs.writeFile(out, Buffer.from(await (await fetch(`${base}/api/studio/render/${job.id}/file`)).arrayBuffer()));
+    // une moitié de l'écran produit (720 x 1280 : deux panneaux de 720 x 640) : un visage, près du centre, en haut comme en bas, y compris quand la détection a perdu la personne
+    const faceIn = async (t, half) => {
+      const { stdout: rgb } = await promisify(execFile)('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', out, '-frames:v', '1', '-vf', `crop=720:640:0:${half === 'top' ? 0 : 640},scale=288:256,pad=288:256:0:0`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 24, encoding: 'buffer' });
+      const found = net.detect(new Uint8Array(rgb), 288, 256);
+      return found.length ? (found[0].x + found[0].w / 2) / 288 : null;
+    };
+    for (const t of [1, 5, 8, 9, 12, 18]) {
+      for (const half of ['top', 'bottom']) {
+        const x = await faceIn(t, half);
+        assert.ok(x !== null && x > 0.2 && x < 0.8, `t=${t} ${half} : visage en ${x}`);
+      }
+    }
+  } finally {
+    await pool.query('DELETE FROM videos WHERE id = $1', [id]);
+  }
 });
