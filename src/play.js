@@ -9,6 +9,8 @@ export const playConfig = () => ({
   base: (process.env.PLAY_URL || 'https://play.projetlisnard.fr').replace(/\/+$/, ''),
   refreshMinutes: Math.max(5, Number(process.env.PLAY_REFRESH_MINUTES) || 60),
   maxPages: Math.max(1, Number(process.env.PLAY_MAX_PAGES) || 5),
+  // Older interventions are only marked as seen: no back-catalogue import (each video costs a transcription credit)
+  maxAgeDays: Math.max(1, Number(process.env.PLAY_MAX_AGE_DAYS) || 30),
 });
 
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -75,6 +77,8 @@ export async function importFromPlay(deps = {}) {
   for (const r of retry) await consider(r.yt, r, r.since);
   // Newest first; an unfinished backlog (first run, long outage) resumes from the saved cursor on later passes
   const backlog = await getSetting('play_cursor', null);
+  const cutoff = Date.now() - cfg.maxAgeDays * 86400_000;
+  const tooOld = (it) => Number.isFinite(Date.parse(it.date)) && Date.parse(it.date) < cutoff;
   let cursor;
   let resume = backlog;
   let fromBacklog = false;
@@ -83,6 +87,10 @@ export async function importFromPlay(deps = {}) {
     const items = Array.isArray(data.items) ? data.items : [];
     const fresh = items.filter((it) => typeof it?.id === 'string' && !seen.has(it.id));
     for (const it of fresh) {
+      if (tooOld(it)) {
+        newlySeen.push(it.id);
+        continue;
+      }
       scanned++;
       let ytId = youtubeIdOf(it.thumbnailUrl);
       // Press articles about a TV show have no video: only video-like kinds are worth a detail request
@@ -95,8 +103,8 @@ export async function importFromPlay(deps = {}) {
       found++;
       await consider(ytId, it, new Date().toISOString());
     }
-    if (!data.nextCursor) {
-      resume = null;
+    if (!data.nextCursor || (items.length && items.every(tooOld))) {
+      resume = null; // end of the list, or only interventions older than the window from here on
       break;
     }
     if (!fresh.length) {

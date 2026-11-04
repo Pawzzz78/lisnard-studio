@@ -401,7 +401,8 @@ Tout est dans [`public/css/theme.css`](public/css/theme.css) ; `app.css` et `adm
 
 Toutes les heures (`PLAY_REFRESH_MINUTES`, 60), le site lit les nouvelles interventions publiées sur **Lisnard Play** (`PLAY_URL`,
 https://play.projetlisnard.fr : son API publique `interventions.list` / `interventions.byId`), des plus récentes aux plus anciennes, et s'arrête
-dès qu'il retombe sur des interventions déjà vues (`PLAY_MAX_PAGES` pages au plus, 5). Celles qui sont des **vidéos YouTube** (miniature YouTube, ou
+dès qu'il retombe sur des interventions déjà vues (`PLAY_MAX_PAGES` pages au plus, 5). Seules les interventions des 30 derniers jours
+(`PLAY_MAX_AGE_DAYS`) sont importées : les plus anciennes sont seulement marquées vues, pour ne pas dépenser un crédit Supadata par vidéo de l'historique. Celles qui sont des **vidéos YouTube** (miniature YouTube, ou
 lecteur YouTube dans le détail de l'intervention) rejoignent la file d'attente comme une vidéo de chaîne suivie : transcription automatique, puis
 téléchargement automatique si `AUTO_DOWNLOAD=on`. Mêmes règles que la synchro : liste d'exclusion respectée, Shorts écartés ; un direct en cours ou une
 vidéo pas encore publique est revérifié à chaque passe pendant 14 jours. Articles de presse et passages sans vidéo YouTube sont ignorés. Admin →

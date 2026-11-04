@@ -11,20 +11,21 @@ let pool;
 let play;
 let calls = [];
 
+const ago = (h) => new Date(Date.now() - h * 3600_000).toISOString();
 const page1 = {
   items: [
-    { id: 'i1', kind: 'tv', title: 'Sur BFMTV', outlet: 'BFMTV', date: '2026-11-04T10:00:00Z', thumbnailUrl: `https://i3.ytimg.com/vi/${IDS.tv}/hqdefault.jpg` },
-    { id: 'i2', kind: 'presse', title: 'Article', outlet: 'Le Figaro', date: '2026-11-04T09:00:00Z', thumbnailUrl: 'https://img.example/a.jpg' },
-    { id: 'i3', kind: 'radio', title: 'Matinale', outlet: 'RTL', date: '2026-11-04T08:00:00Z', thumbnailUrl: 'https://img.example/b.jpg' },
-    { id: 'i4', kind: 'tv', title: 'Déjà là', outlet: 'TF1', date: '2026-11-03T08:00:00Z', thumbnailUrl: `https://i.ytimg.com/vi/${IDS.known}/hqdefault.jpg` },
+    { id: 'i1', kind: 'tv', title: 'Sur BFMTV', outlet: 'BFMTV', date: ago(2), thumbnailUrl: `https://i3.ytimg.com/vi/${IDS.tv}/hqdefault.jpg` },
+    { id: 'i2', kind: 'presse', title: 'Article', outlet: 'Le Figaro', date: ago(3), thumbnailUrl: 'https://img.example/a.jpg' },
+    { id: 'i3', kind: 'radio', title: 'Matinale', outlet: 'RTL', date: ago(4), thumbnailUrl: 'https://img.example/b.jpg' },
+    { id: 'i4', kind: 'tv', title: 'Déjà là', outlet: 'TF1', date: ago(30), thumbnailUrl: `https://i.ytimg.com/vi/${IDS.known}/hqdefault.jpg` },
   ],
   nextCursor: 'c2',
 };
 const page2 = {
   items: [
-    { id: 'i5', kind: 'stream', title: 'Short', date: '2026-11-02T08:00:00Z', thumbnailUrl: `https://i.ytimg.com/vi/${IDS.short}/hqdefault.jpg` },
-    { id: 'i6', kind: 'stream', title: 'En direct', date: '2026-11-02T07:00:00Z', thumbnailUrl: `https://i.ytimg.com/vi/${IDS.live}/hqdefault.jpg` },
-    { id: 'i7', kind: 'tv', title: 'Supprimée', date: '2026-11-02T06:00:00Z', thumbnailUrl: `https://i.ytimg.com/vi/${IDS.excluded}/hqdefault.jpg` },
+    { id: 'i5', kind: 'stream', title: 'Short', date: ago(50), thumbnailUrl: `https://i.ytimg.com/vi/${IDS.short}/hqdefault.jpg` },
+    { id: 'i6', kind: 'stream', title: 'En direct', date: ago(51), thumbnailUrl: `https://i.ytimg.com/vi/${IDS.live}/hqdefault.jpg` },
+    { id: 'i7', kind: 'tv', title: 'Supprimée', date: ago(52), thumbnailUrl: `https://i.ytimg.com/vi/${IDS.excluded}/hqdefault.jpg` },
   ],
   nextCursor: null,
 };
@@ -119,4 +120,17 @@ test('Lisnard Play : pas de clé YouTube, arriéré au-delà des pages lues', { 
   assert.equal(b.scanned, 3, 'page plus ancienne reprise');
   assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'play_cursor'")).rows[0].value, null);
   delete process.env.PLAY_MAX_PAGES;
+});
+
+test('Lisnard Play : les interventions trop anciennes sont marquées vues sans être importées', { skip: !enabled }, async () => {
+  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor')");
+  await pool.query('DELETE FROM videos WHERE youtube_id LIKE $1 AND youtube_id <> $2', ['PLAtest%', IDS.known]);
+  process.env.PLAY_MAX_AGE_DAYS = '1';
+  const asked = [];
+  const r = await play.importFromPlay({ fetchMeta: async (id) => (asked.push(id), { title: id, duration_s: 900, live: false }) });
+  delete process.env.PLAY_MAX_AGE_DAYS;
+  assert.equal(r.scanned, 3, 'seules les interventions de moins d’un jour sont lues');
+  assert.deepEqual(asked.sort(), [IDS.tv, IDS.embed].sort(), 'aucune vidéo ancienne vérifiée');
+  assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'play_seen'")).rows[0].value.length, 7, 'les anciennes sont marquées vues');
+  assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'play_cursor'")).rows[0].value, null, 'pas d’arriéré au-delà de la fenêtre');
 });
