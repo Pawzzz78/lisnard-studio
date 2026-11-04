@@ -4,6 +4,7 @@ import { HttpError, ah } from '../http-error.js';
 import { pool } from '../db.js';
 import { discoverChannel, overview, previewShorts, purgeShorts, runCycle, setSetting } from '../sync.js';
 import { runFetchCycle, filesOverview, retryFailed } from '../video-fetch.js';
+import { runPlayImport } from '../play.js';
 import { YouTubeApiError, resolveChannel, youtubeApiConfigured } from '../youtube.js';
 
 export const syncRouter = Router();
@@ -45,6 +46,9 @@ syncRouter.post(
 
 /** Remet à zéro les vidéos en échec et la pause due à un blocage de YouTube. */
 syncRouter.post('/files/retry', ah(async (_req, res) => res.json({ reset: await retryFailed() })));
+
+// Imports the new interventions listed on Lisnard Play right away
+syncRouter.post('/play', ah(async (_req, res) => res.json(await runPlayImport())));
 
 /** Ajoute une chaîne et liste aussitôt ses vidéos (aucun crédit Supadata n'est consommé à ce stade). */
 syncRouter.post(
