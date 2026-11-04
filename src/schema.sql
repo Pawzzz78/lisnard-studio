@@ -254,3 +254,11 @@ ALTER TABLE videos ADD COLUMN IF NOT EXISTS fetch_next_at    TIMESTAMPTZ;
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS fetch_error      TEXT;
 -- auto_enabled_at : clips autorisés automatiquement, une seule fois
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS auto_enabled_at  TIMESTAMPTZ;
+
+-- Pauses in an interview's audio, per video file (subtitle words never land in a silence)
+CREATE TABLE IF NOT EXISTS video_voice (
+  video_id   INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  file_stamp TEXT NOT NULL,
+  silences   JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

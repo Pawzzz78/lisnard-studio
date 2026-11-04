@@ -17,6 +17,7 @@ import { escFilterPath, measureBoxes } from './box-probe.js';
 import { cropXExpr } from '../../public/js/framing.js';
 import { findTrack } from './music.js';
 import { purgeVisitors } from './stats.js';
+import { videoSilences } from './voice.js';
 import { HttpError } from '../http-error.js';
 import { createLimiter, ipKey } from '../ip.js';
 import { stampOf, storageDir, videoFilePath } from '../media.js';
@@ -312,8 +313,8 @@ export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'fin
  * Fichier ASS du clip : mots horodatés des lignes de la transcription (avec les corrections de texte), groupés selon le style.
  * Un fond arrondi demande de mesurer chaque ligne de texte avec libass (box-probe.js) : d'où la fonction asynchrone.
  */
-export async function assForRequest({ req, lines, video = null }) {
-  const { words } = wordsForExtracts(applyEdits(lines, req.edits), req.extracts);
+export async function assForRequest({ req, lines, video = null, silences = null }) {
+  const { words } = wordsForExtracts(applyEdits(lines, req.edits), req.extracts, silences);
   const groups = groupWords(words, req.style);
   const font = fontById.get(req.style.font) ?? FONTS[0];
   const boxes = roundedBox(req.style) && groups.length ? await measureBoxes({ groups, style: req.style, font, fontsDir: FONTS_DIR }) : undefined;
@@ -631,7 +632,9 @@ function pump() {
 async function runJob(job) {
   job.status = 'running';
   try {
-    await fs.writeFile(job.assPath, await assForRequest({ req: job.req, lines: job.lines, video: job.video })); // (mesure du fond arrondi comprise : dans la file, pas avant)
+    // A long first detection must not hold the render: past 90 s the plain spread is used and detection goes on
+    const silences = await Promise.race([videoSilences({ id: job.video.id, stamp: job.video.stamp, file: job.file, hasAudio: job.hasAudio }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 90_000).unref())]);
+    await fs.writeFile(job.assPath, await assForRequest({ req: job.req, lines: job.lines, video: job.video, silences })); // (mesure du fond arrondi comprise : dans la file, pas avant)
     if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true }); // pendant la mesure du fond ; onDone doit tout de même suivre
     const images = {};
     for (const b of job.req.broll) images[b.id] = await ensureImage(b.id, 'full', { ip: job.ip });

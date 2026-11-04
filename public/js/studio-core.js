@@ -140,7 +140,42 @@ function weight(token) {
  * Les mots d'une ligne sont répartis sur toute la durée de la ligne, puis on ne garde que ceux qui tombent dans l'extrait : une ligne
  * coupée au milieu ne montre que les mots réellement dits dans la partie conservée, sans que le reste soit comprimé.
  */
-export function wordsForExtracts(lines, extracts) {
+// Speech spans of a line [s, e] (seconds) once detected silences are removed; null when detection looks unreliable
+export function voicedSpans(s, e, silences) {
+  if (!silences?.length || e <= s) return null;
+  let lo = 0;
+  let hi = silences.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (silences[mid][1] <= s * 1000) lo = mid + 1;
+    else hi = mid;
+  }
+  const spans = [];
+  let cur = s;
+  for (let i = lo; i < silences.length && silences[i][0] < e * 1000; i++) {
+    const a = silences[i][0] / 1000;
+    const b = silences[i][1] / 1000;
+    if (a > cur) spans.push([cur, a]);
+    cur = Math.max(cur, b);
+  }
+  if (cur < e) spans.push([cur, e]);
+  const voiced = spans.reduce((n, [x, y]) => n + (y - x), 0);
+  // Mostly "silent" lines usually mean music or noise fooled the detector: keep the plain spread
+  return voiced > 0.25 && voiced >= 0.35 * (e - s) ? spans : null;
+}
+
+// Time at fraction f (0..1) of the voiced duration
+function voicedAt(spans, f) {
+  const total = spans.reduce((n, [x, y]) => n + (y - x), 0);
+  let left = f * total;
+  for (const [x, y] of spans) {
+    if (left <= y - x) return x + left;
+    left -= y - x;
+  }
+  return spans.at(-1)[1];
+}
+
+export function wordsForExtracts(lines, extracts, silences = null) {
   const words = [];
   const segments = [];
   let offset = 0;
@@ -158,12 +193,14 @@ export function wordsForExtracts(lines, extracts) {
       const e = ln.end_ms / 1000;
       const ws = tokens.map(weight);
       const total = ws.reduce((a, b) => a + b, 0);
+      const spans = voicedSpans(s, e, silences);
+      const at = (f) => (spans ? voicedAt(spans, f) : s + (e - s) * f);
       let acc = 0;
       let kept = 0;
       tokens.forEach((text, i) => {
-        const a = s + ((e - s) * acc) / total;
+        const a = at(acc / total);
         acc += ws[i];
-        const b = s + ((e - s) * acc) / total;
+        const b = at(acc / total);
         if ((a + b) / 2 < from || (a + b) / 2 >= to) return; // mot dit hors de l'extrait
         words.push({ text, start: offset + (Math.max(a, from) - from), end: offset + (Math.min(b, to) - from), line: lineNo });
         kept++;

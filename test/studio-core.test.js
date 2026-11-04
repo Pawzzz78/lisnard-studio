@@ -589,3 +589,17 @@ test('niveaux : valeur lue du navigateur nettoyée, réglages simples du débuta
   // en débutant : ni miroir, ni logo, ni écran de fin, qualité HD, volumes par défaut
   assert.deepEqual(BEGINNER_DEFAULTS, { mirror: false, logoOn: false, endCardOn: false, quality: 'hd', musicVolume: 0.25, voice: 1 });
 });
+
+test('calage sur la voix : les mots d’une ligne évitent les pauses détectées', async () => {
+  const { voicedSpans } = await import('../public/js/studio-core.js');
+  const lines = [{ start_ms: 0, end_ms: 4000, text: 'un deux trois quatre' }];
+  const ex = [{ start_ms: 0, end_ms: 4000 }];
+  const plain = wordsForExtracts(lines, ex).words;
+  const synced = wordsForExtracts(lines, ex, [[0, 500], [1800, 3000]]).words;
+  assert.ok(synced[0].start >= 0.5, 'pas de mot dans le silence du début');
+  assert.ok(synced.every((w) => !(w.start > 1.8 && w.start < 3)), 'aucun mot ne commence pendant la pause');
+  assert.notDeepEqual(synced.map((w) => w.start), plain.map((w) => w.start));
+  assert.deepEqual(wordsForExtracts(lines, ex, []).words, plain, 'sans pauses connues, rien ne change');
+  assert.equal(voicedSpans(0, 4, [[0, 3800]]), null, 'ligne presque silencieuse : détection jugée peu fiable');
+  assert.deepEqual(voicedSpans(10, 12, [[0, 500], [10500, 11000], [20000, 21000]]), [[10, 10.5], [11, 12]]);
+});

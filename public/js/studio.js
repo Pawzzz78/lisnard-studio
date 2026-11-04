@@ -280,6 +280,7 @@ async function openEditor(youtubeId) {
     edits: new Map(), // corrections de texte : début de la ligne (ms) -> { orig, text }
     endCard: { ...endCardSettings(prefs.endCard), on: false },
     logo: readLogo(),
+    silences: null, // pauses de l'interview (détectées par le serveur) : les mots des sous-titres n'y tombent pas
   };
   // corrections gardées dans le navigateur (un rechargement ne les perd pas) ; ignorées si la transcription a changé depuis
   const editsKey = `studio.edits.${S.video.youtube_id}`;
@@ -440,7 +441,7 @@ async function openEditor(youtubeId) {
     renderFrame();
   }
   /** Mots horodatés du clip, corrections de texte comprises. */
-  const clipWords = () => wordsForExtracts(S.edits.size ? S.lines.map((l) => (S.edits.has(l.start_ms) ? { ...l, text: S.edits.get(l.start_ms).text } : l)) : S.lines, S.extracts.map(exMs)).words;
+  const clipWords = () => wordsForExtracts(S.edits.size ? S.lines.map((l) => (S.edits.has(l.start_ms) ? { ...l, text: S.edits.get(l.start_ms).text } : l)) : S.lines, S.extracts.map(exMs), S.silences).words;
   function rebuildSubtitles() {
     const words = clipWords();
     phone.configure({ groups: groupWords(words, S.style), style: S.style, font: fontById.get(S.style.font) });
@@ -1825,6 +1826,16 @@ async function openEditor(youtubeId) {
   else extractsChanged();
   booting = false;
   if (S.jobId) resumeJob(S.jobId);
+  // Same voice timing as the rendered video; the first detection for an interview can take a little while
+  (async () => {
+    for (let i = 0; i < 6 && !S.silences; i++) {
+      const r = await request('GET', `/videos/${encodeURIComponent(S.video.youtube_id)}/voice`).catch(() => null);
+      if (r?.res.ok && Array.isArray(r.data.silences)) {
+        S.silences = r.data.silences;
+        rebuildSubtitles();
+      } else if (!r?.data?.pending) break;
+    }
+  })();
 
   teardown = () => {
     clearTimeout(polling);

@@ -14,6 +14,8 @@ import { facesStatus, framingForRequest } from '../studio/faces.js';
 import { recordEvent } from '../studio/stats.js';
 import { ensureImage, searchPhotos, stockEnabled, stockProvider } from '../studio/stock.js';
 import { parseYoutubeId } from '../youtube.js';
+import { stampOf, videoFilePath } from '../media.js';
+import { videoSilences } from '../studio/voice.js';
 import { ensureOwner, libraryConfigured } from '../library/owner.js';
 
 export const studioRouter = Router();
@@ -136,6 +138,19 @@ export async function linesOf(videoId) {
  * Trajectoire du cadre qui suit le visage (mode plein écran), pour l'aperçu en direct :
  * { segments: [{ t0, t1, keys }], faces, coverage } ; `segments` vaut null si le suivi n'est pas disponible pour ce clip.
  */
+const voiceOf = (v) => ({ id: v.id, stamp: stampOf(v), file: videoFilePath(v.file_name), hasAudio: v.file_has_audio });
+
+/** Pauses de l'interview, pour caler les sous-titres de l'aperçu ; la première détection peut prendre quelques dizaines de secondes. */
+studioRouter.get(
+  '/videos/:youtubeId/voice',
+  ah(async (req, res) => {
+    const v = await loadVideo(req.params.youtubeId);
+    const silences = await Promise.race([videoSilences(voiceOf(v)), new Promise((r) => setTimeout(() => r(undefined), 20_000))]);
+    res.set('Cache-Control', silences ? 'private, max-age=3600' : 'no-store');
+    res.json({ silences: silences ?? null, pending: silences === undefined });
+  }),
+);
+
 studioRouter.post(
   '/framing',
   ah(async (req, res) => {
