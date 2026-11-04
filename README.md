@@ -397,6 +397,17 @@ police Montserrat (fichiers dans `public/fonts/`). Le logo officiel n'est volont
 Tout est dans [`public/css/theme.css`](public/css/theme.css) ; `app.css` et `admin.css` n'utilisent que ces variables.
 
 
+### Interventions de Lisnard Play
+
+Toutes les heures (`PLAY_REFRESH_MINUTES`, 60), le site lit les nouvelles interventions publiées sur **Lisnard Play** (`PLAY_URL`,
+https://play.projetlisnard.fr : son API publique `interventions.list` / `interventions.byId`), des plus récentes aux plus anciennes, et s'arrête
+dès qu'il retombe sur des interventions déjà vues (`PLAY_MAX_PAGES` pages au plus, 5). Seules les interventions des 30 derniers jours
+(`PLAY_MAX_AGE_DAYS`) sont importées : les plus anciennes sont seulement marquées vues, pour ne pas dépenser un crédit Supadata par vidéo de l'historique. Celles qui sont des **vidéos YouTube** (miniature YouTube, ou
+lecteur YouTube dans le détail de l'intervention) rejoignent la file d'attente comme une vidéo de chaîne suivie : transcription automatique, puis
+téléchargement automatique si `AUTO_DOWNLOAD=on`. Mêmes règles que la synchro : liste d'exclusion respectée, Shorts écartés ; un direct en cours ou une
+vidéo pas encore publique est revérifié à chaque passe pendant 14 jours. Articles de presse et passages sans vidéo YouTube sont ignorés. Admin →
+« Synchronisation » : état de la dernière passe et bouton « Importer maintenant ». `PLAY_ENABLED=off` pour couper. Tests : `test/play.test.js`.
+
 ## Téléchargement automatique des vidéos
 
 Pour que le studio n'attende plus un dépôt à la main, le site peut **télécharger lui-même les interviews** (yt-dlp, outil libre) : `AUTO_DOWNLOAD=on`. Désactivé par défaut.
@@ -444,6 +455,15 @@ Deuxième section du site, `/mur/` : un mur des meilleurs TikToks publiés avec 
 - **Modération** (admin → « Mur ») : masquer un clip ou tous les clips d'un auteur ; le masquage survit aux actualisations. Les légendes sont affichées
   en texte brut.
 - Tables : `wall_clips`, `wall_hidden_authors` ; dernière actualisation dans `settings` (`wall_last_run`). Tests : `test/wall.test.js` (Apify simulé).
+
+### Sous-titres calés sur la voix
+
+YouTube ne donne qu'un horaire **par ligne** de transcription (2 à 5 s de parole) : les mots d'une ligne sont répartis selon leur longueur. Pour que les
+pauses, hésitations et respirations ne décalent plus les sous-titres, le serveur repère **une fois par interview** les silences de l'audio (filtre
+`silencedetect` de ffmpeg : sous −32 dB pendant 0,18 s ou plus), gardés en base (`video_voice`, liés à la version du fichier). Les mots de chaque ligne
+sont ensuite répartis seulement sur les moments parlés, dans l'aperçu (`GET /api/studio/videos/:id/voice`) comme dans la vidéo créée. Si une ligne
+paraît presque silencieuse (musique, bruit de fond), la répartition simple est gardée. Code : `src/studio/voice.js`, `voicedSpans` dans
+`public/js/studio-core.js`.
 
 ### Logo du compte
 

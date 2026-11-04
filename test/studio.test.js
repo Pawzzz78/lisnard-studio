@@ -895,3 +895,19 @@ test('logo du compte : sur la vidéo téléchargée, jamais sur la version propr
   assert.ok(!(b[0] > 200 && b[1] < 60 && b[2] < 60), `version propre sans logo ${[...b]}`);
   assert.ok(Math.abs(Number(probe(withLogo).format.duration) - Number(probe(clean).format.duration)) < 0.1);
 });
+
+test('calage sur la voix : pauses détectées une fois par fichier, gardées en base, servies au studio', { skip: !enabled }, async () => {
+  const voice = await import('../src/studio/voice.js');
+  assert.deepEqual(voice.parseSilences('x\n[silencedetect @ 0x1] silence_start: 1.5\n[silencedetect @ 0x1] silence_end: 2.25 | silence_duration: 0.75\nsilence_start: 9'), [[1500, 2250], [9000, 2 ** 31 - 1]], 'un silence final court jusqu’à la fin');
+  const gap = path.join(dir, 'gap.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-filter_complex', '[1]atrim=0:1[s];[0][s][0]concat=n=3:v=0:a=1[a]', '-map', '[a]', '-c:a', 'aac', gap]);
+  const v = { id: videoRowId, stamp: 'test-gap', file: gap, hasAudio: true };
+  const sil = await voice.videoSilences(v);
+  assert.equal(sil.length, 1);
+  assert.ok(Math.abs(sil[0][0] - 2000) < 150 && Math.abs(sil[0][1] - 3000) < 150, JSON.stringify(sil));
+  const { rows } = await pool.query('SELECT file_stamp FROM video_voice WHERE video_id = $1', [videoRowId]);
+  assert.equal(rows[0].file_stamp, 'test-gap');
+  const r = await api('GET', `/api/studio/videos/${YT}/voice`);
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.body.silences), 'pauses du vrai fichier recalculées pour son empreinte actuelle');
+});

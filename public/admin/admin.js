@@ -1144,6 +1144,15 @@ async function renderSync() {
       keyLine(o.keys.youtube, 'Liste des vidéos d’une chaîne YouTube', 'YOUTUBE_API_KEY', 'nécessaire pour lister les vidéos d’une chaîne'),
       keyLine(o.keys.supadata, 'Récupération des transcriptions', 'SUPADATA_API_KEY', 'nécessaire pour récupérer les transcriptions'),
     ),
+    h('div', { class: 'panel-sub' },
+      h('h3', {}, 'Lisnard Play'),
+      h('p', { class: 'status' }, o.play.enabled
+        ? `Toutes les ${o.play.refreshMinutes} min, les nouvelles interventions de ${o.play.base.replace(/^https?:\/\//, '')} sont lues : leurs vidéos YouTube rejoignent la file d’attente (Shorts et directs en cours écartés). `
+        : 'Désactivé (PLAY_ENABLED=off). ',
+        o.play.last_run ? (o.play.last_run.ok
+          ? `Dernière passe : ${new Date(o.play.last_run.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}, ${o.play.last_run.scanned} intervention${o.play.last_run.scanned > 1 ? 's' : ''} lue${o.play.last_run.scanned > 1 ? 's' : ''}, ${o.play.last_run.added} vidéo${o.play.last_run.added > 1 ? 's' : ''} ajoutée${o.play.last_run.added > 1 ? 's' : ''}.`
+          : `Dernière passe en échec : ${o.play.last_run.error}`) : 'Aucune passe pour le moment.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn secondary small', type: 'button', onclick: go(async () => { const r = await api('POST', '/sync/play', {}); return `${r.added} vidéo${r.added > 1 ? 's' : ''} ajoutée${r.added > 1 ? 's' : ''} depuis Lisnard Play (${r.found} trouvée${r.found > 1 ? 's' : ''}).`; }) }, 'Importer maintenant'))),
     h('div', { class: 'stats' }, stat(o.counts.pending, 'en attente', 'pending'), stat(o.counts.done, 'transcrites auto.', 'done'), stat(o.counts.failed, 'en échec', 'failed'), stat(o.counts.manual, 'ajoutées à la main', 'manual')),
     h(
       'p',

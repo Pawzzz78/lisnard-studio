@@ -11,6 +11,7 @@
  * sous verrou de ligne. Les vidéos ajoutées à la main (sync_status NULL), celles déjà transcrites
  * (automatiquement ou corrigées à la main) ne sont ni relues ni modifiées.
  */
+import { playConfig } from './play.js';
 import { removeVideoFiles } from './media.js';
 import { pool, replaceSegments, withTransaction } from './db.js';
 import { getSetting, setSetting } from './settings.js';
@@ -351,6 +352,7 @@ export async function overview() {
     getSetting('llm_last_error', null),
     summariesOverview(),
   ]);
+  const play = { ...playConfig(), last_run: await getSetting('play_last_run', null) };
   const byStatus = Object.fromEntries(counts.map((r) => [r.status, r.n]));
   return {
     keys: { youtube: youtubeApiConfigured(), supadata: supadataConfigured() },
@@ -363,5 +365,6 @@ export async function overview() {
     counts: { pending: byStatus.pending ?? 0, done: byStatus.done ?? 0, failed: byStatus.failed ?? 0, manual: byStatus.manual ?? 0 },
     channels,
     failed,
+    play,
   };
 }
