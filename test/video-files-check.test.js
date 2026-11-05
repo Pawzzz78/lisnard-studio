@@ -44,49 +44,40 @@ after(async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-test('fichier disparu : retiré du studio au deuxième passage seulement, les autres ne bougent pas', { skip: !enabled }, async () => {
+test('fichier disparu : retiré du studio, les autres ne bougent pas', { skip: !enabled }, async () => {
   await seed([[ids[0], `${ids[0]}.mp4`, old(), 'auto'], [ids[1], `${ids[1]}.mp4`, old(), null], [ids[2], `${ids[2]}.mp4`, old(), null]]);
   await put(ids[0]);
   await put(ids[1]); // le 3e a disparu du disque
-  check.resetMissingMemory();
-  const a = await check.checkVideoFiles();
-  assert.deepEqual([a.checked, a.missing, a.reset], [3, 1, 0], 'premier passage : on note seulement');
-  assert.equal((await state())[ids[2]].clips_enabled, true);
-  const b = await check.checkVideoFiles();
-  assert.deepEqual([b.missing, b.reset], [1, 1]);
+  const b = await check.checkVideoFiles({ recheckMs: 0 });
+  assert.deepEqual([b.checked, b.missing, b.reset], [3, 1, 1]);
   const s = await state();
   assert.deepEqual([s[ids[2]].file_name, s[ids[2]].clips_enabled], [null, false], 'plus dans le studio');
   assert.deepEqual([s[ids[0]].clips_enabled, s[ids[1]].clips_enabled], [true, true]);
-  assert.equal((await check.checkVideoFiles()).reset, 0);
+  assert.equal((await check.checkVideoFiles({ recheckMs: 0 })).reset, 0);
 });
 
-test('un fichier qui revient entre deux passages n\'est pas retiré', { skip: !enabled }, async () => {
+test('un fichier qui revient pendant la revérification n\'est pas retiré', { skip: !enabled }, async () => {
   await seed([[ids[0], `${ids[0]}.mp4`, old(), null], [ids[1], `${ids[1]}.mp4`, old(), null]]);
   await put(ids[0]);
   await fs.rm(path.join(dir, 'storage', 'videos', `${ids[1]}.mp4`), { force: true });
-  check.resetMissingMemory();
-  assert.equal((await check.checkVideoFiles()).missing, 1);
-  await put(ids[1]);
-  assert.deepEqual([(await check.checkVideoFiles()).reset, (await state())[ids[1]].clips_enabled], [0, true]);
+  const run = check.checkVideoFiles({ recheckMs: 300 });
+  setTimeout(() => put(ids[1]), 100); // le fichier est remis en place pendant l'attente
+  const r = await run;
+  assert.deepEqual([r.missing, r.reset, (await state())[ids[1]].clips_enabled], [1, 0, true]);
 });
 
 test('prudence : fichier tout récent ignoré, dossier absent ou tous les fichiers manquants = rien de touché', { skip: !enabled }, async () => {
   // déposé il y a une minute : encore en cours de mise en place
   await seed([[ids[0], `${ids[0]}.mp4`, new Date(), null]]);
-  check.resetMissingMemory();
-  assert.equal((await check.checkVideoFiles()).checked, 0);
-  assert.equal((await check.checkVideoFiles()).reset, 0);
+  assert.deepEqual([(await check.checkVideoFiles({ recheckMs: 0 })).checked, (await check.checkVideoFiles({ recheckMs: 0 })).reset], [0, 0]);
   // tous les fichiers manquent (volume probablement absent)
   await seed(ids.slice(0, 3).map((yt) => [yt, `${yt}.mp4`, old(), null]));
   for (const yt of ids) await fs.rm(path.join(dir, 'storage', 'videos', `${yt}.mp4`), { force: true });
-  check.resetMissingMemory();
-  await check.checkVideoFiles();
-  const all = await check.checkVideoFiles();
+  const all = await check.checkVideoFiles({ recheckMs: 0 });
   assert.match(all.skipped, /tous les fichiers/);
   assert.equal(Object.values(await state()).every((v) => v.clips_enabled), true);
   // dossier des vidéos absent (volume pas monté)
   await fs.rename(path.join(dir, 'storage', 'videos'), path.join(dir, 'storage', 'videos-away'));
-  check.resetMissingMemory();
-  assert.match((await check.checkVideoFiles()).skipped, /absent/);
+  assert.match((await check.checkVideoFiles({ recheckMs: 0 })).skipped, /absent/);
   await fs.rename(path.join(dir, 'storage', 'videos-away'), path.join(dir, 'storage', 'videos'));
 });

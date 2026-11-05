@@ -2,7 +2,7 @@
  * Vérifie que les fichiers vidéo annoncés par la base sont bien sur le disque : une interview dont le fichier a disparu (supprimé à la main,
  * volume vidé ou remplacé) ne doit plus apparaître dans le studio, sinon on pourrait l'ouvrir et le clip échouerait.
  *
- * Prudence : un fichier n'est déclaré perdu que s'il manque à deux passages de suite ; rien n'est touché si le dossier des vidéos n'existe pas
+ * Prudence : un fichier n'est déclaré perdu que s'il manque encore 30 secondes après le premier constat ; rien n'est touché si le dossier des vidéos n'existe pas
  * (volume pas monté) ou si TOUS les fichiers manquent (volume probablement absent : une fois remonté, les fichiers reviennent) ; un fichier
  * déposé ou téléchargé depuis moins de 10 minutes est ignoré. Les vidéos téléchargées par le site (file_source = 'auto') sont ensuite retéléchargées
  * par le téléchargement automatique s'il est activé ; celles déposées à la main doivent être déposées de nouveau.
@@ -14,7 +14,7 @@ import { storageDir, videoFilePath } from './media.js';
 import { removeFaces } from './studio/faces.js';
 
 const GRACE_MS = 10 * 60 * 1000;
-let missingBefore = new Set(); // vidéos dont le fichier manquait déjà au passage précédent
+const RECHECK_MS = 30_000;
 
 const present = async (name) => {
   try {
@@ -26,7 +26,7 @@ const present = async (name) => {
 };
 
 /** Un passage. Renvoie { checked, missing, reset, skipped }. `now` : pour les tests. */
-export async function checkVideoFiles({ now = Date.now() } = {}) {
+export async function checkVideoFiles({ now = Date.now(), recheckMs = RECHECK_MS } = {}) {
   const { rows } = await pool.query('SELECT id, youtube_id, title, file_name, file_uploaded_at FROM videos WHERE file_name IS NOT NULL ORDER BY id');
   const out = { checked: 0, missing: 0, reset: 0, skipped: null };
   if (!(await fs.stat(path.join(storageDir(), 'videos')).then((s) => s.isDirectory(), () => false))) {
@@ -42,11 +42,12 @@ export async function checkVideoFiles({ now = Date.now() } = {}) {
   out.missing = lost.length;
   if (out.checked >= 3 && lost.length === out.checked) {
     out.skipped = 'tous les fichiers manquent (volume absent ?) : rien n\'est modifié';
-    missingBefore = new Set();
     return out;
   }
-  const confirmed = lost.filter((v) => missingBefore.has(v.id));
-  missingBefore = new Set(lost.map((v) => v.id));
+  // un fichier en cours de remplacement ou un disque lent : on revérifie un instant plus tard avant de conclure
+  if (lost.length && recheckMs > 0) await new Promise((r) => setTimeout(r, recheckMs));
+  const confirmed = [];
+  for (const v of lost) if (!(await present(v.file_name))) confirmed.push(v);
   for (const v of confirmed) {
     await removeFaces(v.id);
     const { rowCount } = await pool.query(
@@ -62,13 +63,9 @@ export async function checkVideoFiles({ now = Date.now() } = {}) {
   return out;
 }
 
-/** Vérification toutes les 30 minutes (que le téléchargement automatique soit activé ou non). */
+/** Vérification au démarrage (2 minutes après) puis toutes les 48 heures (que le téléchargement automatique soit activé ou non). */
 export function startVideoFilesCheck() {
   const tick = () => checkVideoFiles().catch((e) => console.error(`Fichiers vidéo : ${e.message}`));
   setTimeout(tick, 2 * 60_000).unref();
-  setInterval(tick, 30 * 60_000).unref();
+  setInterval(tick, 48 * 3600_000).unref();
 }
-
-export const resetMissingMemory = () => {
-  missingBefore = new Set();
-};
