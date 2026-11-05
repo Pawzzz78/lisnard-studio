@@ -17,6 +17,7 @@ import { startScheduler } from './sync.js';
 import { startWallScheduler } from './wall/wall.js';
 import { startLibraryMaintenance } from './library/library.js';
 import { startVideoFetcher } from './video-fetch.js';
+import { startVideoFilesCheck } from './video-files-check.js';
 import { startPlayImport } from './play.js';
 import { startTrendingScheduler } from './studio/trending.js';
 
@@ -102,6 +103,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   startWallScheduler();
   startLibraryMaintenance();
   startVideoFetcher();
+  startVideoFilesCheck();
   startPlayImport();
   startTrendingScheduler();
 }
