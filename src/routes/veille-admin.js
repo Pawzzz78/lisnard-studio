@@ -16,7 +16,7 @@ veilleAdminRouter.get(
 veilleAdminRouter.post(
   '/refresh',
   ah(async (_req, res) => {
-    const r = await startVeilleRefresh({ trigger: 'admin' });
+    const r = await startVeilleRefresh({ trigger: 'admin', minGapMs: 2 * 60_000 });
     if (!r.started) throw new HttpError(409, r.reason);
     res.status(202).json({ started: true });
   }),

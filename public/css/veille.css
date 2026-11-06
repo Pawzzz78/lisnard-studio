@@ -2,7 +2,7 @@
 .veille { padding: 1.6rem 0 3.2rem; display: grid; gap: 1.2rem; }
 .vl-totals { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .6rem; }
 .vl-totals li { display: grid; gap: .1rem; padding: .8rem 1rem; border: 1px solid var(--color-hairline); border-radius: var(--radius-card); background: var(--color-surface); }
-.vl-totals strong { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 1.8rem; line-height: 1.1; color: var(--color-primary); }
+.vl-totals strong { font-size: 1.4rem; font-weight: 800; line-height: 1.2; color: var(--color-primary); }
 .vl-totals span { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--color-muted); }
 
 .vl-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .8rem 1.4rem; padding-bottom: 1rem; border-bottom: 2px dashed var(--color-chamois); }

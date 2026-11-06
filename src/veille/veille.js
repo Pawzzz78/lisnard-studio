@@ -169,9 +169,9 @@ export async function listVeille({ platform = null, sort = 'recent', author = nu
     pool.query(`SELECT p.* FROM hashtag_posts p WHERE ${cond} ORDER BY ${SORTS[sort]}, p.key DESC LIMIT ${lim} OFFSET ${off}`, args),
     pool.query(`SELECT count(*)::int AS n FROM hashtag_posts p WHERE ${cond}`, args),
     pool.query(
-      `SELECT p.platform, p.author, max(p.nickname) AS nickname, count(*)::int AS posts, sum(p.views)::bigint AS views, sum(p.likes)::bigint AS likes, max(p.created_at) AS last_at
+      `SELECT p.platform, min(p.author) AS author, max(p.nickname) AS nickname, count(*)::int AS posts, sum(p.views)::bigint AS views, sum(p.likes)::bigint AS likes, max(p.created_at) AS last_at
        FROM hashtag_posts p WHERE ${VISIBLE} ${platform ? 'AND p.platform = $1' : ''}
-       GROUP BY p.platform, p.author ORDER BY posts DESC, views DESC LIMIT 50`,
+       GROUP BY p.platform, lower(p.author) ORDER BY posts DESC, views DESC LIMIT 50`,
       platform ? [platform] : [],
     ),
     pool.query(
@@ -240,9 +240,14 @@ export const veilleIdle = () => running?.catch(() => {}) ?? Promise.resolve();
 export const lastRun = () => getSetting('veille_last_run', null);
 
 /** Lance une actualisation en arrière-plan : { started } ou { started: false, reason }. */
-export async function startVeilleRefresh({ trigger = 'admin', fetchImpl = fetch } = {}) {
+export async function startVeilleRefresh({ trigger = 'admin', fetchImpl = fetch, minGapMs = 0 } = {}) {
   const cfg = veilleConfig();
   if (!cfg.token) return { started: false, reason: 'APIFY_TOKEN manquant : ajoute le jeton Apify aux variables du serveur.' };
+  if (running) return { started: false, reason: 'Une actualisation est déjà en cours.' };
+  // Each run costs Apify credit: the admin button cannot fire twice in a row
+  const last = minGapMs ? await lastRun() : null;
+  const since = last?.started_at ? Date.now() - Date.parse(last.started_at) : Infinity;
+  if (since < minGapMs) return { started: false, reason: `Actualisation récente : réessaie dans ${Math.ceil((minGapMs - since) / 60000)} min.` };
   if (running) return { started: false, reason: 'Une actualisation est déjà en cours.' };
   running = doRefresh(cfg, { trigger, fetchImpl }).finally(() => {
     running = null;
