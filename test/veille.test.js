@@ -1,4 +1,4 @@
-// Le mur #projetlisnard : lecture des éléments d'Apify (TikTok, Instagram), client Apify simulé, actualisation et page (Postgres requis)
+// Le mur #projetlisnard (vide hashtag_posts de la base de test) : lecture des éléments d'Apify (TikTok, Instagram), client Apify simulé, actualisation et page (Postgres requis)
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { ApifyError, runActor } from '../src/veille/apify.js';
@@ -93,7 +93,7 @@ before(async () => {
   const db = await import('../src/db.js');
   pool = db.pool;
   await db.initDb();
-  await pool.query("DELETE FROM hashtag_posts WHERE author IN ('jean.d', 'marie_l', 'paul.p')");
+  await pool.query('DELETE FROM hashtag_posts');
   await pool.query('DELETE FROM hashtag_hidden_authors');
   await pool.query("DELETE FROM settings WHERE key IN ('veille_last_run', 'veille_last_ok')");
   V = await import('../src/veille/veille.js');
@@ -101,7 +101,7 @@ before(async () => {
 
 after(async () => {
   if (!enabled) return;
-  await pool.query("DELETE FROM hashtag_posts WHERE author IN ('jean.d', 'marie_l', 'paul.p')");
+  await pool.query('DELETE FROM hashtag_posts');
   await pool.query('DELETE FROM hashtag_hidden_authors');
   await pool.query("DELETE FROM settings WHERE key IN ('veille_last_run', 'veille_last_ok')");
   await pool.end();
