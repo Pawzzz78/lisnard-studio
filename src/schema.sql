@@ -167,29 +167,7 @@ CREATE TABLE IF NOT EXISTS face_references (
 ALTER TABLE video_faces ADD COLUMN IF NOT EXISTS ident         JSONB;
 ALTER TABLE video_faces ADD COLUMN IF NOT EXISTS ident_version TEXT;
 
--- Mur des clips : vidéos TikTok du hashtag suivi (récupérées via Apify), classées par vues, j'aime et commentaires.
-CREATE TABLE IF NOT EXISTS wall_clips (
-  id         TEXT PRIMARY KEY,
-  url        TEXT NOT NULL,
-  author     TEXT NOT NULL,
-  nickname   TEXT NOT NULL DEFAULT '',
-  text       TEXT NOT NULL DEFAULT '',
-  hashtags   JSONB NOT NULL DEFAULT '[]',
-  created_at TIMESTAMPTZ,
-  views      BIGINT NOT NULL DEFAULT 0,
-  likes      BIGINT NOT NULL DEFAULT 0,
-  comments   BIGINT NOT NULL DEFAULT 0,
-  shares     BIGINT NOT NULL DEFAULT 0,
-  saves      BIGINT NOT NULL DEFAULT 0,
-  duration_s INTEGER,
-  cover_url  TEXT,
-  has_cover  BOOLEAN NOT NULL DEFAULT FALSE,
-  hidden     BOOLEAN NOT NULL DEFAULT FALSE,
-  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS wall_clips_created_idx ON wall_clips (created_at DESC);
-CREATE TABLE IF NOT EXISTS wall_hidden_authors (author TEXT PRIMARY KEY);
+-- Ancien mur (#lisnard2027) : tables wall_clips / wall_hidden_authors laissées en place sur les bases existantes, plus utilisées.
 
 -- Clip library; owner_key is an HMAC of the owner (member or anonymous cookie), never shown publicly
 CREATE TABLE IF NOT EXISTS library_clips (
@@ -262,3 +240,24 @@ CREATE TABLE IF NOT EXISTS video_voice (
   silences   JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Le mur #projetlisnard : publications TikTok et Instagram du hashtag (récupérées via Apify), et auteurs masqués par l'admin.
+CREATE TABLE IF NOT EXISTS hashtag_posts (
+  key        TEXT PRIMARY KEY,
+  platform   TEXT NOT NULL,
+  url        TEXT NOT NULL,
+  author     TEXT NOT NULL,
+  nickname   TEXT NOT NULL DEFAULT '',
+  text       TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ,
+  views      BIGINT NOT NULL DEFAULT 0,
+  likes      BIGINT NOT NULL DEFAULT 0,
+  comments   BIGINT NOT NULL DEFAULT 0,
+  cover_url  TEXT,
+  has_cover  BOOLEAN NOT NULL DEFAULT FALSE,
+  hidden     BOOLEAN NOT NULL DEFAULT FALSE,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS hashtag_posts_created_idx ON hashtag_posts (created_at DESC);
+CREATE TABLE IF NOT EXISTS hashtag_hidden_authors (platform TEXT NOT NULL, author TEXT NOT NULL, PRIMARY KEY (platform, author));

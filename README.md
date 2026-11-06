@@ -435,27 +435,25 @@ Le studio (`/` et `/api/studio/*`) peut être réservé aux adhérents grâce au
 - **Demande d'accès** (une fois, auprès de l'équipe numérique de NE) : nom et description de l'app, porteur du projet joignable, serveur capable de garder un secret, redirect URI exacte `PUBLIC_URL/api/auth/callback` (un client `-dev` séparé pour les essais), URL de retour après déconnexion `PUBLIC_URL/`, claims utilisées : `sub` et `given_name` seulement. Les mentions légales décrivent ce traitement.
 - **Tests** : `test/members.test.js` (faux SSO local qui signe de vrais jetons RS256 et vérifie secret et PKCE).
 
-## Le mur des clips
+## Le mur (#projetlisnard)
 
-Deuxième section du site, `/mur/` : un mur des meilleurs TikToks publiés avec le hashtag **#lisnard2027** (réglable), dans la charte du site.
+Deuxième section du site, `/mur/` : toutes les publications **TikTok et Instagram** avec le hashtag **#projetlisnard** (que le studio ajoute à
+chaque description), et les comptes qui les publient. Il remplace l'ancien mur des meilleurs TikToks #lisnard2027.
 
-- **Source** : l'acteur Apify **clockworks/tiktok-scraper** (variable `APIFY_TOKEN`, jeton personnel Apify). Le serveur lance l'exécution
-  (`POST /v2/acts/clockworks~tiktok-scraper/runs`, entrée `hashtags` et `resultsPerPage`, sans téléchargement de vidéos), attend la fin, lit le jeu de
-  données et l'enregistre dans la table `wall_clips` (`src/wall/apify.js`, `src/wall/wall.js`). **Le mur ne parle jamais à Apify** : les visiteurs lisent
-  la base. Sont écartés : les publicités, les vidéos sans le hashtag, les éléments d'erreur de l'acteur. Un clip déjà connu voit ses compteurs mis à jour.
-- **Actualisation** : automatique toutes les `WALL_REFRESH_HOURS` heures (**24** par défaut, 0 pour seulement à la demande), et à la demande dans l'admin
-  (onglet « Mur », au plus une toutes les 2 minutes). Un échec n'efface rien : le mur garde ses clips et l'admin voit l'erreur ; on réessaie au bout
-  d'une heure. Coût indicatif (1,70 $ pour 1 000 résultats) : 100 vidéos par jour reviennent à environ 5 $ par mois ; l'admin l'affiche.
-- **Classement** : `score = vues × 1 + j'aime × 10 + commentaires × 50` (`WALL_WEIGHTS="1,10,50"`), calculé à la lecture. **Le mur ne montre que les 13 meilleurs clips** (`WALL_MAX`, 13 par défaut) : les 100 vidéos récupérées servent à les choisir. Le visiteur peut
-  réordonner ces 13 par vues, j'aime, ou commentaires (sans nouvel appel au serveur : un seul chargement par période), ou choisir les 13 meilleurs des 7 derniers jours (**période affichée par défaut**), des 30 derniers jours ou depuis le début (s'il n'y a aucun clip récent, un bouton propose de voir depuis le début) ; les trois premiers du classement forment le podium. Adresses partageables :
-  `/mur/?tri=vues&periode=30` (la période par défaut, 7 jours, n'apparaît pas dans l'adresse ; `periode=tout` pour depuis le début).
-- **Affichage** : un collage d'affiches, dans la charte du site (bleu, rose, chamois, Montserrat, Fraunces pour les chiffres du rang comme pour le logotype) : chaque clip est une affiche de papier blanc **aux bords déchirés**, un peu penchée, tenue par un morceau de scotch, avec une pastille de rang collée sur le coin ; le podium (1er au centre, plus grand) puis le reste en vrac ; la bannière et la bande d'appel ont elles aussi un bord déchiré. Le découpage et l'inclinaison sont tirés au hasard **à partir de l'identifiant du clip** (stables d'une visite à l'autre, `public/js/wall.js`). Chaque affiche montre la vignette verticale, l'auteur et les vues / j'aime / commentaires. Au clic, une fenêtre charge le **lecteur officiel de
-  TikTok** (`tiktok.com/embed/v2/…`, seulement à ce moment-là, avec un avis sur les cookies de TikTok) et un lien « Ouvrir sur TikTok ». Les vignettes sont
-  copiées sur le volume (`<STORAGE_DIR>/wall/covers`, JPEG de 360 px) parce que les adresses de TikTok expirent ; seules les adresses de TikTok et d'Apify
-  en HTTPS sont téléchargées. **Vignettes délavées** : certaines vidéos commencent par un fondu blanc, leur image d'accueil est alors grisâtre (la carte paraît « déjà vue » ; le site ne garde aucun suivi de lecture). Une vignette sans vrai noir et à faible contraste (10ᵉ centile de luminance ≥ 150 et écart 10ᵉ–90ᵉ centile < 70, mesurés avec ffmpeg `signalstats`) est étirée avec `normalize` à l'enregistrement, et celles déjà enregistrées sont corrigées sur place 90 s après le démarrage et à chaque actualisation ; les images sombres (scène de nuit) ou claires mais contrastées ne sont pas touchées.
-- **Modération** (admin → « Mur ») : masquer un clip ou tous les clips d'un auteur ; le masquage survit aux actualisations. Les légendes sont affichées
-  en texte brut.
-- Tables : `wall_clips`, `wall_hidden_authors` ; dernière actualisation dans `settings` (`wall_last_run`). Tests : `test/wall.test.js` (Apify simulé).
+- **Source** : Apify (variable `APIFY_TOKEN`, déjà utilisée pour les sons tendance). Acteurs `clockworks/tiktok-scraper` (entrée `hashtags`,
+  `resultsPerPage`) et `apify/instagram-hashtag-scraper` (entrée `hashtags`, `resultsLimit`), 300 résultats par plateforme
+  (`src/veille/apify.js`, `src/veille/veille.js`). Les éléments sont lus de façon tolérante (plusieurs noms de champs acceptés) ; ceux sans le
+  hashtag, les publicités et les erreurs de l'acteur sont écartés. **Les visiteurs lisent la base**, jamais Apify. Une plateforme en échec n'empêche
+  pas l'autre d'être enregistrée.
+- **Actualisation** : toutes les 12 h et à la demande dans l'admin (onglet « Mur »), qui affiche pour chaque plateforme ce qui a été reçu, retenu,
+  ajouté, le coût Apify, et les champs reçus si plus rien n'est retenu (format de l'acteur changé). Les vignettes sont copiées sur le volume
+  (`<STORAGE_DIR>/veille/covers`, JPEG de 360 px), seulement depuis les serveurs de TikTok, d'Instagram et d'Apify en HTTPS.
+- **Page** : totaux (publications, comptes, vues, par plateforme), liste des comptes (nombre de publications, vues ; un clic filtre la grille, ↗ ouvre
+  le profil), grille des publications (plus récentes, plus vues ou plus aimées ; filtre TikTok / Instagram). Un clic ouvre la publication sur la
+  plateforme : aucun lecteur tiers n'est chargé sur le site. API : `GET /api/veille?platform=&sort=recent|views|likes&author=&limit=&offset=`.
+- **Modération** (admin → « Mur ») : masquer une publication ou toutes celles d'un compte ; le masquage survit aux actualisations.
+- Tables : `hashtag_posts`, `hashtag_hidden_authors` ; dernière actualisation dans `settings` (`veille_last_run`, `veille_last_ok`).
+  Tests : `test/veille.test.js` (Apify simulé). Les anciennes tables `wall_clips` / `wall_hidden_authors` ne sont plus utilisées.
 
 ### Sous-titres calés sur la voix
 
@@ -545,7 +543,7 @@ tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéo
   openrouter.js      client OpenRouter minimal (traduction, résumés, extraits)
   summarize.js       résumé d'une transcription (repères de temps, 2 étapes si très long, nettoyage)
   studio/            studio public : rendu ffmpeg (render.js), détection et reconnaissance des visages (faces.js, faces-worker.js, yunet.js, sface.js, identity.js, references.js, nn.js), mesure du fond des sous-titres (box-probe.js), images libres de droits Pixabay / Pexels (stock.js), polices (fonts.json), musiques d'origine et bibliothèque de l'admin (music.json, music.js)
-  wall/              mur des clips : client Apify (apify.js), classement, vignettes, actualisation planifiée (wall.js)
+  veille/            le mur #projetlisnard : client Apify (apify.js), lecture TikTok / Instagram, vignettes, actualisation (veille.js)
   media.js           fichiers vidéo du studio : dépôt par morceaux, ffprobe, stockage
   clip-suggestions.js  extraits proposés par le LLM (numéros de lignes, horaires issus de la transcription)
   summaries.js       résumés stockés en base : génération, anti-doublons
@@ -557,7 +555,7 @@ tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéo
   sync.js            synchronisation : découverte des vidéos, file d'attente, planificateur
   youtube.js         extraction d'ID, métadonnées oEmbed
   auth.js            session admin (cookie signé HMAC), limiteur de tentatives
-  routes/            API du studio (/api/studio/…), du mur (/api/wall/…), santé (/api/health) et admin (/api/admin/…)
+  routes/            API du studio (/api/studio/…), du mur (/api/veille/…), santé (/api/health) et admin (/api/admin/…)
 public/              studio (index.html), mur (mur/), mentions-legales/ et admin (admin/)
 test/                tests unitaires + test d'intégration (si DATABASE_URL défini)
 ```
