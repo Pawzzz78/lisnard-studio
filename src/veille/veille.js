@@ -57,7 +57,8 @@ function hasTag(tags, text, hashtag) {
 
 /** Élément brut de l'acteur TikTok → publication, ou { skip }. */
 export function normalizeTiktok(raw, hashtag = HASHTAG) {
-  if (!raw || typeof raw !== 'object' || (raw.error && !raw.id)) return { skip: 'invalid' };
+  if (!raw || typeof raw !== 'object') return { skip: 'invalid' };
+  if (raw.error && !raw.id) return { skip: 'error' }; // e.g. NOT_FOUND while nobody has used the hashtag yet
   const id = String(first(raw.id, raw.videoId, raw.aweme_id) ?? '');
   if (!/^\d{6,25}$/.test(id)) return { skip: 'invalid' };
   if (raw.isAd === true || raw.isSponsored === true) return { skip: 'ad' };
@@ -87,7 +88,8 @@ export function normalizeTiktok(raw, hashtag = HASHTAG) {
 
 /** Élément brut de l'acteur Instagram → publication, ou { skip }. */
 export function normalizeInstagram(raw, hashtag = HASHTAG) {
-  if (!raw || typeof raw !== 'object' || (raw.error && !raw.shortCode)) return { skip: 'invalid' };
+  if (!raw || typeof raw !== 'object') return { skip: 'invalid' };
+  if (raw.error && !raw.shortCode) return { skip: 'error' }; // e.g. no_items while nobody has used the hashtag yet
   const short = String(first(raw.shortCode, raw.shortcode, raw.code) ?? (/instagram\.com\/(?:p|reel|tv)\/([\w-]+)/.exec(String(raw.url ?? ''))?.[1] ?? ''));
   if (!/^[\w-]{5,40}$/.test(short)) return { skip: 'invalid' };
   const author = clean(first(raw.ownerUsername, raw.owner?.username, raw.username), 60).replace(/^@/, '');

@@ -17,6 +17,8 @@ test('TikTok : élément lu, adresse nettoyée ; publicité, sans hashtag et ill
   assert.equal(normalizeTiktok(tt({ isAd: true })).skip, 'ad');
   assert.equal(normalizeTiktok(tt({ text: 'rien', hashtags: [] })).skip, 'hashtag');
   assert.equal(normalizeTiktok(tt({ id: 'x' })).skip, 'invalid');
+  assert.equal(normalizeTiktok({ error: 'This profile/hashtag does not exist.', errorCode: 'NOT_FOUND' }).skip, 'error');
+  assert.equal(normalizeInstagram({ error: 'no_items', url: 'https://www.instagram.com/explore/tags/x' }).skip, 'error');
 });
 
 test('Instagram : élément lu (hashtag dans la légende, casse ignorée), variantes de champs, illisible écarté', () => {

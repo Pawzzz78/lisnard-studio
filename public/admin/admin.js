@@ -952,6 +952,8 @@ async function renderWallAdmin() {
       const r = last?.platforms?.[pl];
       if (!r) return null;
       if (r.status !== 'ok') return h('p', { class: 'status err' }, `${LABEL[pl]} : échec (${r.error}).`);
+      const empty = r.kept === 0 && (r.received === 0 || r.skipped?.error === r.received);
+      if (empty) return h('p', { class: 'status' }, `${LABEL[pl]} : aucune publication avec #${data.hashtag} pour l’instant.`);
       const broken = r.received > 0 && r.kept === 0;
       return h('p', { class: broken ? 'status err' : 'status' },
         `${LABEL[pl]} : ${fmtNum(r.received)} reçues, ${fmtNum(r.kept)} retenues, ${fmtNum(r.added)} nouvelle${r.added > 1 ? 's' : ''}${r.cost_usd != null ? `, coût Apify ${r.cost_usd.toFixed(2).replace('.', ',')} $` : ''}.`,

@@ -16,10 +16,10 @@
 .vl-updated { margin: -.4rem .2rem 0; font-size: .8rem; color: var(--color-muted); min-height: 1.2em; }
 
 .vl-layout { display: grid; gap: 1.6rem; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 900px) { .vl-layout { grid-template-columns: 19rem minmax(0, 1fr); align-items: start; } .vl-authors { position: sticky; top: 1rem; } }
+@media (min-width: 900px) { .vl-layout { grid-template-columns: 19rem minmax(0, 1fr); align-items: start; } .vl-authors { position: sticky; top: 1rem; } .vl-authors ol { max-height: 75vh; } }
 .vl-layout h2 { margin: 0 0 .7rem; font-size: 1.05rem; color: var(--color-primary); }
 
-.vl-authors ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; max-height: 70vh; overflow-y: auto; }
+.vl-authors ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; max-height: 17rem; overflow-y: auto; }
 .vl-authors li { display: flex; align-items: stretch; gap: .3rem; }
 .vl-author { flex: 1; min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: .1rem .5rem; align-items: center; padding: .55rem .7rem; border: 1px solid var(--color-hairline); border-radius: 10px; background: var(--color-surface); font: inherit; text-align: left; color: var(--color-text); cursor: pointer; }
 .vl-author:hover { border-color: var(--color-primary); }
