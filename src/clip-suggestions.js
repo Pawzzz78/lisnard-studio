@@ -306,3 +306,53 @@ export async function getClipSuggestions(videoId) {
   if (!rows[0]) return null;
   return { clips: rows[0].content.clips ?? [], model: rows[0].model, created_at: rows[0].created_at, outdated: rows[0].text_hash !== rows[0].current_hash };
 }
+
+// --- citations de Lisnard Play -------------------------------------------------------------
+
+/** Extraits tirés des citations de Lisnard Play, calés sur la transcription quand elle existe (début de phrase, durée 15 à 60 s). */
+export function playClipsFrom(quotes, rows = []) {
+  const segs = prepareSegments(rows);
+  const out = [];
+  for (const q of Array.isArray(quotes) ? quotes : []) {
+    const at = Math.round(Number(q?.start_s) * 1000);
+    const text = String(q?.text ?? '').trim();
+    if (!text || !Number.isFinite(at)) continue;
+    // Play quotes are condensed (elisions, interruptions): leave room for the full passage
+    const spoken = Math.max(20_000, text.length * SPEECH_MS_PER_CHAR + 6000);
+    let start = at;
+    let end = at + spoken;
+    const i = segs.findIndex((s) => s.end_ms > at + 500);
+    if (i >= 0) {
+      start = segs[i].start_ms < at - 5000 ? at : segs[i].start_ms;
+      let j = i;
+      while (j < segs.length - 1 && segs[j].end_ms < start + spoken && segs[j + 1].end_ms - start <= CLIP_LIMITS.maxS * 1000) j++;
+      end = segs[j].end_ms;
+    }
+    end = Math.min(Math.max(end, start + CLIP_LIMITS.minS * 1000), start + CLIP_LIMITS.maxS * 1000);
+    const flat = cleanText(text, 600).replace(/!+/g, '').trim();
+    const title = typeof q?.title === 'string' && q.title.trim() ? q.title.trim() : flat.length <= 70 ? flat : `${flat.slice(0, 69).replace(/\s+\S*$/, '')}…`;
+    out.push({
+      start_ms: start,
+      end_ms: end,
+      duration_s: Math.round((end - start) / 100) / 10,
+      title,
+      why: 'Citation repérée sur Lisnard Play.',
+      description: buildCaption(`« ${cleanText(text, 140)} »`, [], title).caption,
+      score: 9,
+      text: text.slice(0, 1800),
+      source: 'play',
+    });
+  }
+  return out;
+}
+
+/** Extraits proposés d'une vidéo, citations de Lisnard Play en tête puis ceux du modèle qui ne les chevauchent pas. */
+export async function withPlayQuotes(videoId, sg) {
+  const { rows: v } = await pool.query('SELECT play_quotes FROM videos WHERE id = $1', [videoId]);
+  const quotes = v[0]?.play_quotes;
+  if (!Array.isArray(quotes) || !quotes.length) return sg;
+  const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [videoId]);
+  const play = playClipsFrom(quotes, rows);
+  const llm = (sg?.clips ?? []).filter((c) => !play.some((p) => c.start_ms < p.end_ms && p.start_ms < c.end_ms));
+  return { model: null, created_at: null, outdated: false, ...sg, clips: [...play, ...llm] };
+}

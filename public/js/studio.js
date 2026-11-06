@@ -567,20 +567,20 @@ async function openEditor(youtubeId) {
   }
 
   let suggShown = 6; // extraits proposés affichés d'emblée (les mieux notés d'abord) ; le reste sur demande
-  let easyShown = 3;
+  let easyShown = 10;
 
   /** Niveau débutant : uniquement les extraits proposés par l'IA, en grandes cartes, un seul bouton par carte. */
   function easyExtracts() {
     const cur = S.extracts[0] ?? null;
     const custom = cur && cur.from == null ? cur : null; // passage libre choisi en niveau avancé : on le garde, on ne le modifie pas ici
-    const pickBtn = (on, onclick, key) => el('button', { class: on ? 'btn st-easy-pick on' : 'btn st-easy-pick', type: 'button', 'aria-pressed': String(on), 'data-k': key, onclick }, on ? '✓ Extrait choisi' : 'Choisir cet extrait');
+    const pickBtn = (on, onclick, key) => el('button', { class: on ? 'btn st-easy-pick on' : 'btn st-easy-pick', type: 'button', 'aria-pressed': String(on), 'data-k': key, onclick }, on ? '✓ Choisi' : 'Choisir');
     const card = (sg) => {
       const on = cur?.from === sg.start_ms;
       return el('li', { class: on ? 'st-easy-card on' : 'st-easy-card' },
-        el('h3', { class: 'st-easy-title' }, sg.title),
-        el('p', { class: 'st-easy-meta' }, `Durée : ${Math.round(sg.duration_s)} secondes`),
-        sg.why ? el('p', { class: 'st-easy-why' }, sg.why) : null,
-        el('details', {}, el('summary', {}, 'Lire le texte de cet extrait'), el('p', { class: 'st-text' }, sg.text)),
+        el('div', { class: 'st-easy-body' },
+          el('h3', { class: 'st-easy-title' }, sg.title),
+          el('p', { class: 'st-easy-meta' }, `${mmss(sg.start_ms)} · ${Math.round(sg.duration_s)} s`),
+          el('details', {}, el('summary', {}, 'Lire le texte'), el('p', { class: 'st-text' }, sg.text))),
         pickBtn(on, () => addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description, true), `easy:${sg.start_ms}`));
     };
     return [
@@ -595,7 +595,7 @@ async function openEditor(youtubeId) {
             el('p', {}, 'L’intelligence artificielle n’a pas trouvé de passage assez fort dans cette interview.'),
             el('p', {}, 'Tu peux choisir une autre interview, ou passer en niveau avancé pour choisir toi-même le passage.'),
             el('button', { class: 'btn secondary', type: 'button', onclick: () => { setLevel('avance'); renderExtracts(); } }, 'Passer en niveau avancé')),
-      S.suggestions.length > easyShown ? el('button', { class: 'btn secondary st-easy-more', type: 'button', onclick: () => { easyShown += 3; renderExtracts(); } }, 'Voir d’autres extraits') : null,
+      S.suggestions.length > easyShown ? el('button', { class: 'btn secondary st-easy-more', type: 'button', onclick: () => { easyShown += 10; renderExtracts(); } }, 'Voir d’autres extraits') : null,
     ];
   }
 
@@ -1599,7 +1599,7 @@ async function openEditor(youtubeId) {
     niveau: { title: 'Quel est ton niveau ?', hint: 'Choisis ce qui te ressemble : on adapte les étapes pour que ce soit simple pour toi.', panel: panelLevel },
     extraits: {
       title: 'Choisis ton extrait',
-      hint: { debutant: 'Voici les meilleurs passages repérés par l’intelligence artificielle. Touche « Choisir cet extrait » sous celui qui te plaît : tu le vois tout de suite dans l’aperçu.', avance: 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.' },
+      hint: { debutant: 'Voici les meilleurs passages repérés par l’intelligence artificielle. Touche « Choisir » à côté de celui qui te plaît : tu le vois tout de suite dans l’aperçu.', avance: 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.' },
       panel: panelExtracts,
     },
     style: {

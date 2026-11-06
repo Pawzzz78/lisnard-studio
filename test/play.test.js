@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { after, before, test } from 'node:test';
-import { youtubeIdOf } from '../src/play.js';
+import { playQuotesOf, youtubeIdOf } from '../src/play.js';
+import { playClipsFrom } from '../src/clip-suggestions.js';
 
 const enabled = Boolean(process.env.DATABASE_URL);
 const IDS = { known: 'PLAtest_aa1', tv: 'PLAtest_bb2', embed: 'PLAtest_cc3', short: 'PLAtest_dd4', live: 'PLAtest_ee5', excluded: 'PLAtest_ff6' };
@@ -37,6 +38,7 @@ before(async () => {
     const input = JSON.parse(url.searchParams.get('input') ?? '{}');
     calls.push(`${url.pathname} ${JSON.stringify(input)}`);
     const send = (data) => res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ result: { data } }));
+    if (url.pathname === '/api/trpc/interventions.list' && input.format === 'long') return send({ items: [], nextCursor: null });
     if (url.pathname === '/api/trpc/interventions.list') return send(input.cursor === 'c2' ? page2 : page1);
     if (url.pathname === '/api/trpc/interventions.byId') {
       return send(input.id === 'i3' ? { id: 'i3', media: { kind: 'embed', provider: 'youtube', embedUrl: `https://www.youtube.com/embed/${IDS.embed}?feature=oembed` } } : { id: input.id, media: null });
@@ -49,7 +51,7 @@ before(async () => {
   await db.initDb();
   await pool.query('DELETE FROM videos WHERE youtube_id LIKE $1', ['PLAtest%']);
   await pool.query('DELETE FROM excluded_videos WHERE youtube_id LIKE $1', ['PLAtest%']);
-  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor')");
+  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor', 'play_long_done')");
   await pool.query("INSERT INTO videos (youtube_id, title, source) VALUES ($1, 'Déjà là', 'manual')", [IDS.known]);
   await pool.query("INSERT INTO excluded_videos (youtube_id, reason) VALUES ($1, 'manual')", [IDS.excluded]);
   play = await import('../src/play.js');
@@ -59,7 +61,7 @@ after(async () => {
   if (!enabled) return;
   await pool.query('DELETE FROM videos WHERE youtube_id LIKE $1', ['PLAtest%']);
   await pool.query('DELETE FROM excluded_videos WHERE youtube_id LIKE $1', ['PLAtest%']);
-  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor')");
+  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor', 'play_long_done')");
   server.close();
   await pool.end();
 });
@@ -102,7 +104,7 @@ test('Lisnard Play : nouvelles vidéos YouTube mises en file, presse, Shorts, di
 });
 
 test('Lisnard Play : pas de clé YouTube, arriéré au-delà des pages lues', { skip: !enabled }, async () => {
-  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor')");
+  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor', 'play_long_done')");
   await pool.query('DELETE FROM videos WHERE youtube_id LIKE $1 AND youtube_id <> $2', ['PLAtest%', IDS.known]);
   const metas = (id) => ({ title: id, channel: 'C', duration_s: 900, live: false });
   // no API key and no injected lookup: the pass fails instead of marking everything as seen
@@ -123,7 +125,7 @@ test('Lisnard Play : pas de clé YouTube, arriéré au-delà des pages lues', { 
 });
 
 test('Lisnard Play : les interventions trop anciennes sont marquées vues sans être importées', { skip: !enabled }, async () => {
-  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor')");
+  await pool.query("DELETE FROM settings WHERE key IN ('play_seen', 'play_last_run', 'play_retry', 'play_cursor', 'play_long_done')");
   await pool.query('DELETE FROM videos WHERE youtube_id LIKE $1 AND youtube_id <> $2', ['PLAtest%', IDS.known]);
   process.env.PLAY_MAX_AGE_DAYS = '1';
   const asked = [];
@@ -133,4 +135,27 @@ test('Lisnard Play : les interventions trop anciennes sont marquées vues sans �
   assert.deepEqual(asked.sort(), [IDS.tv, IDS.embed].sort(), 'aucune vidéo ancienne vérifiée');
   assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'play_seen'")).rows[0].value.length, 7, 'les anciennes sont marquées vues');
   assert.equal((await pool.query("SELECT value FROM settings WHERE key = 'play_cursor'")).rows[0].value, null, 'pas d’arriéré au-delà de la fenêtre');
+});
+
+test('Citations Play : nettoyées puis calées sur la transcription (début de ligne, 15 à 60 s)', () => {
+  const quotes = playQuotesOf({ quotes: [{ text: '  Je propose  une droite indépendante. ', startS: 396, theme: 'campaign' }, { text: '', startS: 3 }, { text: 'x', startS: 'a' }] });
+  assert.deepEqual(quotes, [{ text: 'Je propose une droite indépendante.', start_s: 396, theme: 'campaign' }]);
+  const rows = Array.from({ length: 40 }, (_, i) => ({ start_ms: 380_000 + i * 4000, duration_ms: 4000, text: `Phrase ${i}.` }));
+  const [c] = playClipsFrom(quotes, rows);
+  assert.equal(c.start_ms, 396_000);
+  assert.ok(c.duration_s >= 15 && c.duration_s <= 60);
+  assert.equal(c.source, 'play');
+  const [bare] = playClipsFrom(quotes, []);
+  assert.equal(bare.start_ms, 396_000);
+  assert.equal(bare.end_ms, 416_000);
+});
+
+test('Titres des citations : écrits par le modèle, citations inchangées si la réponse est inutilisable', async () => {
+  const { titleQuotes } = await import('../src/play.js');
+  const quotes = [{ text: 'Je propose une droite indépendante.', start_s: 396, theme: null }];
+  const ok = await titleQuotes(quotes, { complete: async () => '```json\n{"titles":["Lisnard veut une « droite indépendante » !"]}\n```' });
+  assert.equal(ok[0].title, 'Lisnard veut une droite indépendante');
+  const ko = await titleQuotes(quotes, { complete: async () => 'pas du json' });
+  assert.equal(ko[0].title, undefined);
+  assert.equal(playClipsFrom(ok)[0].title, 'Lisnard veut une droite indépendante');
 });
