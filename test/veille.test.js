@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { ApifyError, runActor } from '../src/veille/apify.js';
-import { coverUrlAllowed, normalizeInstagram, normalizeItems, normalizeTiktok, refreshDue } from '../src/veille/veille.js';
+import { actorInput, coverUrlAllowed, normalizeInstagram, normalizeItems, normalizeTiktok, refreshDue } from '../src/veille/veille.js';
 
 const enabled = Boolean(process.env.DATABASE_URL);
 
@@ -29,6 +29,15 @@ test('Instagram : élément lu (hashtag dans la légende, casse ignorée), varia
   const { posts, skipped } = normalizeItems([ig(), ig(), ig({ caption: 'x' })], 'instagram');
   assert.equal(posts.length, 1);
   assert.deepEqual(skipped, { hashtag: 1 });
+});
+
+test('entrées Apify : rattrapage de 300 la première fois, puis 50 ; filtre de date seulement sur Instagram', () => {
+  assert.deepEqual(actorInput('tiktok', 'projetlisnard', true).results, 300);
+  const tt2 = actorInput('tiktok', 'projetlisnard', false);
+  assert.equal(tt2.input.resultsPerPage, 50);
+  assert.equal(tt2.input.onlyPostsNewerThan, undefined);
+  assert.equal(actorInput('instagram', 'projetlisnard', true).input.onlyPostsNewerThan, undefined);
+  assert.deepEqual([actorInput('instagram', 'projetlisnard', false).input.resultsLimit, actorInput('instagram', 'projetlisnard', false).input.onlyPostsNewerThan], [50, '3 days']);
 });
 
 test('vignettes : seulement la plateforme ou Apify, en HTTPS', () => {

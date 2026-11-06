@@ -19,8 +19,12 @@ import { runActor } from './apify.js';
 const run = promisify(execFile);
 
 export const HASHTAG = 'projetlisnard';
-const REFRESH_HOURS = 12;
-const RESULTS = 300; // par plateforme et par actualisation
+const REFRESH_HOURS = 24;
+// Apify bills per result: a full catch-up only when a platform has nothing stored yet, then just the newest posts
+const RESULTS_FIRST = 300;
+const RESULTS = 50;
+// Instagram only: the TikTok actor ignores date filters on hashtags (profiles only, per its maintainers)
+const INSTAGRAM_NEWER_THAN = '3 days';
 export const ACTORS = { tiktok: 'clockworks/tiktok-scraper', instagram: 'apify/instagram-hashtag-scraper' };
 export const PLATFORMS = ['tiktok', 'instagram'];
 export const SORTS = { recent: 'p.created_at DESC NULLS LAST', views: 'p.views DESC', likes: 'p.likes DESC' };
@@ -30,7 +34,6 @@ export const veilleConfig = () => ({
   baseUrl: process.env.APIFY_BASE_URL || 'https://api.apify.com',
   hashtag: HASHTAG,
   refreshHours: REFRESH_HOURS,
-  results: RESULTS,
 });
 
 // --- lecture des éléments d'Apify ------------------------------------------------------------------------------------------
@@ -256,10 +259,12 @@ export async function startVeilleRefresh({ trigger = 'admin', fetchImpl = fetch,
   return { started: true };
 }
 
-const inputs = (cfg) => ({
-  tiktok: { hashtags: [cfg.hashtag], resultsPerPage: cfg.results, shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false, shouldDownloadSlideshowImages: false },
-  instagram: { hashtags: [cfg.hashtag], resultsLimit: cfg.results },
-});
+/** Entrée de l'acteur : rattrapage complet si rien n'est encore stocké pour la plateforme, sinon seulement les plus récentes. */
+export function actorInput(platform, hashtag, firstRun) {
+  const results = firstRun ? RESULTS_FIRST : RESULTS;
+  if (platform === 'tiktok') return { results, input: { hashtags: [hashtag], resultsPerPage: results, shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false, shouldDownloadSlideshowImages: false } };
+  return { results, input: { hashtags: [hashtag], resultsLimit: results, ...(firstRun ? {} : { onlyPostsNewerThan: INSTAGRAM_NEWER_THAN }) } };
+}
 
 async function doRefresh(cfg, { trigger, fetchImpl }) {
   const record = { trigger, started_at: new Date().toISOString(), status: 'running', platforms: {} };
@@ -267,11 +272,13 @@ async function doRefresh(cfg, { trigger, fetchImpl }) {
   // One platform failing (actor change, no credit) must not drop the other one's results
   for (const platform of PLATFORMS) {
     try {
-      const { items, run: apifyRun } = await runActor({ token: cfg.token, actor: ACTORS[platform], baseUrl: cfg.baseUrl, maxItems: cfg.results, fetchImpl, input: inputs(cfg)[platform] });
+      const { rows: stored } = await pool.query('SELECT 1 FROM hashtag_posts WHERE platform = $1 LIMIT 1', [platform]);
+      const { results, input } = actorInput(platform, cfg.hashtag, !stored.length);
+      const { items, run: apifyRun } = await runActor({ token: cfg.token, actor: ACTORS[platform], baseUrl: cfg.baseUrl, maxItems: results, fetchImpl, input });
       const { posts, skipped } = normalizeItems(items, platform, cfg.hashtag);
       const added = await savePosts(posts);
       const sample = items.find((x) => x && typeof x === 'object');
-      record.platforms[platform] = { status: 'ok', received: items.length, kept: posts.length, added, skipped, sample_keys: sample ? Object.keys(sample).slice(0, 40) : [], cost_usd: Number.isFinite(apifyRun.usageTotalUsd) ? apifyRun.usageTotalUsd : null };
+      record.platforms[platform] = { status: 'ok', requested: results, received: items.length, kept: posts.length, added, skipped, sample_keys: sample ? Object.keys(sample).slice(0, 40) : [], cost_usd: Number.isFinite(apifyRun.usageTotalUsd) ? apifyRun.usageTotalUsd : null };
     } catch (e) {
       console.error(`veille ${platform} : ${e.message}`);
       record.platforms[platform] = { status: 'failed', error: String(e.message).slice(0, 300) };

@@ -441,11 +441,13 @@ Deuxième section du site, `/mur/` : toutes les publications **TikTok et Instagr
 chaque description), et les comptes qui les publient. Il remplace l'ancien mur des meilleurs TikToks #lisnard2027.
 
 - **Source** : Apify (variable `APIFY_TOKEN`, déjà utilisée pour les sons tendance). Acteurs `clockworks/tiktok-scraper` (entrée `hashtags`,
-  `resultsPerPage`) et `apify/instagram-hashtag-scraper` (entrée `hashtags`, `resultsLimit`), 300 résultats par plateforme
+  `resultsPerPage`) et `apify/instagram-hashtag-scraper` (entrée `hashtags`, `resultsLimit`). Apify facture au résultat : 300 résultats la
+  première fois pour une plateforme (rattrapage), puis 50 seulement, et sur Instagram uniquement les posts des 3 derniers jours
+  (`onlyPostsNewerThan`) ; l'acteur TikTok ignore les filtres de date sur les hashtags
   (`src/veille/apify.js`, `src/veille/veille.js`). Les éléments sont lus de façon tolérante (plusieurs noms de champs acceptés) ; ceux sans le
   hashtag, les publicités et les erreurs de l'acteur sont écartés. **Les visiteurs lisent la base**, jamais Apify. Une plateforme en échec n'empêche
   pas l'autre d'être enregistrée.
-- **Actualisation** : toutes les 12 h et à la demande dans l'admin (onglet « Mur »), qui affiche pour chaque plateforme ce qui a été reçu, retenu,
+- **Actualisation** : une fois par jour et à la demande dans l'admin (au plus une toutes les 2 min) (onglet « Mur »), qui affiche pour chaque plateforme ce qui a été reçu, retenu,
   ajouté, le coût Apify, et les champs reçus si plus rien n'est retenu (format de l'acteur changé). Les vignettes sont copiées sur le volume
   (`<STORAGE_DIR>/veille/covers`, JPEG de 360 px), seulement depuis les serveurs de TikTok, d'Instagram et d'Apify en HTTPS.
 - **Page** : totaux (publications, comptes, vues, par plateforme), liste des comptes (nombre de publications, vues ; un clic filtre la grille, ↗ ouvre
