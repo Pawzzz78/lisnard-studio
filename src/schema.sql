@@ -32,6 +32,8 @@ ALTER TABLE videos ADD COLUMN IF NOT EXISTS sync_attempts INTEGER NOT NULL DEFAU
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS sync_next_at  TIMESTAMPTZ;
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS sync_error    TEXT;
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS channel_id    TEXT;
+-- Citations repérées par Lisnard Play (vidéos longues) : [{ text, start_s, theme }], proposées comme extraits à clipper
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS play_quotes   JSONB;
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS duration_s    INTEGER;
 CREATE INDEX IF NOT EXISTS videos_sync_pending ON videos (sync_next_at) WHERE sync_status = 'pending';
 

@@ -398,14 +398,16 @@
 .studio[data-level="debutant"] [data-adv] { display: none !important; }
 
 /* extraits en grandes cartes (débutant) */
-.st-easy { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
-.st-easy-card { display: grid; gap: .55rem; padding: 1.2rem 1.25rem 1.3rem; border: 3px solid var(--color-hairline); border-radius: var(--radius-card); background: var(--color-surface-alt); }
-.st-easy-card.on { border-color: var(--color-success); background: #fff; box-shadow: 0 0 0 4px rgba(23,115,68,.14); }
-.st-panel .st-easy-title { margin: 0; font-size: 1.3rem; line-height: 1.3; text-transform: none; letter-spacing: 0; color: var(--color-primary); }
-.st-easy-meta { margin: 0; font-size: 1rem; font-weight: 700; color: var(--st-chamois-text); }
-.st-easy-why { margin: 0; font-size: 1.05rem; line-height: 1.5; color: var(--color-text); }
-.st-easy-card details summary { cursor: pointer; font-size: 1rem; font-weight: 700; color: var(--color-primary); padding: .5rem 0; min-height: 2.75rem; display: flex; align-items: center; }
-.st-easy-pick { justify-self: stretch; min-height: 3.4rem; font-size: 1.1rem; }
+.st-easy { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.st-easy-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .4rem .75rem; padding: .6rem .75rem; border: 2px solid var(--color-hairline); border-radius: var(--radius-card); background: var(--color-surface-alt); }
+.st-easy-card.on { border-color: var(--color-success); background: #fff; box-shadow: 0 0 0 3px rgba(23,115,68,.14); }
+.st-easy-body { display: grid; gap: .15rem; min-width: 0; }
+.st-panel .st-easy-title { margin: 0; font-size: 1rem; line-height: 1.3; text-transform: none; letter-spacing: 0; color: var(--color-primary); }
+.st-easy-meta { margin: 0; font-size: .85rem; font-weight: 700; color: var(--st-chamois-text); }
+.st-easy-why { margin: 0; font-size: .95rem; line-height: 1.4; color: var(--color-text); }
+.st-easy-card details summary { cursor: pointer; font-size: .85rem; font-weight: 700; color: var(--color-primary); padding: .15rem 0; }
+.st-easy-card details .st-text { font-size: .9rem; margin: .3rem 0 0; }
+.st-easy-pick { min-height: 2.75rem; padding: .4rem .9rem; font-size: .95rem; white-space: nowrap; }
 .st-easy-pick.on { background: var(--color-success); border-color: var(--color-success); cursor: default; }
 .st-easy-chosen { margin: 0; font-size: 1.1rem; font-weight: 800; color: var(--color-success); }
 .st-easy-more { margin-top: 1rem; width: 100%; min-height: 3.2rem; font-size: 1.05rem; }

@@ -1147,7 +1147,7 @@ async function renderSync() {
     h('div', { class: 'panel-sub' },
       h('h3', {}, 'Lisnard Play'),
       h('p', { class: 'status' }, o.play.enabled
-        ? `Toutes les ${o.play.refreshMinutes} min, les nouvelles interventions de ${o.play.base.replace(/^https?:\/\//, '')} sont lues : leurs vidéos YouTube rejoignent la file d’attente (Shorts et directs en cours écartés). `
+        ? `Toutes les ${o.play.refreshMinutes} min, les nouvelles interventions de ${o.play.base.replace(/^https?:\/\//, '')} sont lues : leurs vidéos YouTube rejoignent la file d’attente (Shorts et directs en cours écartés). Toutes les « Vidéos longues » sont aussi importées, et leurs citations deviennent des extraits à clipper. `
         : 'Désactivé (PLAY_ENABLED=off). ',
         o.play.last_run ? (o.play.last_run.ok
           ? `Dernière passe : ${new Date(o.play.last_run.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}, ${o.play.last_run.scanned} intervention${o.play.last_run.scanned > 1 ? 's' : ''} lue${o.play.last_run.scanned > 1 ? 's' : ''}, ${o.play.last_run.added} vidéo${o.play.last_run.added > 1 ? 's' : ''} ajoutée${o.play.last_run.added > 1 ? 's' : ''}.`
@@ -2147,7 +2147,7 @@ async function renderEditor(id) {
     });
 
     const sg = st.suggestions;
-    const suggestBtn = h('button', { class: 'btn secondary small', type: 'button', disabled: !st.llm || !st.has_text }, sg ? 'Régénérer les extraits' : 'Proposer des extraits');
+    const suggestBtn = h('button', { class: 'btn secondary small', type: 'button', disabled: !st.llm || !st.has_text }, sg?.created_at ? 'Régénérer les extraits' : 'Proposer des extraits');
     suggestBtn.addEventListener('click', () =>
       busy(suggestBtn, async () => {
         status(clipMsg, 'Recherche des meilleurs extraits… (une minute environ)');
@@ -2173,7 +2173,7 @@ async function renderEditor(id) {
       return h(
         'article',
         { class: 'clip-card' },
-        h('div', { class: 'clip-top' }, h('strong', {}, `${fmtTs(c.start_ms)} → ${fmtTs(c.end_ms)}`), h('span', { class: 'badge' }, `${Math.round(c.duration_s)} s`), h('span', { class: 'badge ok', title: 'Note donnée par l’IA' }, `${c.score}/10`), seek),
+        h('div', { class: 'clip-top' }, h('strong', {}, `${fmtTs(c.start_ms)} → ${fmtTs(c.end_ms)}`), h('span', { class: 'badge' }, `${Math.round(c.duration_s)} s`), c.source === 'play' ? h('span', { class: 'badge ok', title: 'Citation reprise de Lisnard Play' }, 'Play') : h('span', { class: 'badge ok', title: 'Note donnée par l’IA' }, `${c.score}/10`), seek),
         h('p', { class: 'clip-title' }, c.title),
         c.why ? h('p', { class: 'status' }, c.why) : null,
         h('details', {}, h('summary', {}, 'Texte de l’extrait'), h('p', { class: 'clip-text' }, c.text)),

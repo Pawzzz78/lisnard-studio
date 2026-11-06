@@ -3,7 +3,7 @@
  * et propositions d'extraits par le LLM. Monté sur /api/admin/videos/:id (donc protégé par la session admin).
  */
 import express, { Router } from 'express';
-import { generateClipSuggestions, getClipSuggestions } from '../clip-suggestions.js';
+import { generateClipSuggestions, getClipSuggestions, withPlayQuotes } from '../clip-suggestions.js';
 import { pool } from '../db.js';
 import { HttpError, ah } from '../http-error.js';
 import {
@@ -59,7 +59,7 @@ async function state(v) {
     file: fileInfo(v),
     enabled: v.clips_enabled,
     has_text: v.has_text,
-    suggestions: await getClipSuggestions(v.id),
+    suggestions: await withPlayQuotes(v.id, await getClipSuggestions(v.id)),
     ffmpeg: await ffmpegAvailable(),
     render_ready: (await ffmpegAvailable()) ? (await studioCapabilities()).ready : false, // sous-titres + H.264 + AAC disponibles pour créer les clips
     llm: llmConfigured(),

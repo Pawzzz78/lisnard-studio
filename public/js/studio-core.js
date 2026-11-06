@@ -349,7 +349,8 @@ export const DESCRIPTION_MAX = 2200;
 export const DISCORD_URL = 'https://discord.gg/lisnard2027';
 
 /** Pied de la description : le lien du Discord, puis le crédit de la musique quand sa licence en demande un. */
-export const descriptionFooter = (song) => [`Rejoins-nous sur Discord : ${DISCORD_URL}`, song?.credit ? `Musique : ${song.title} — ${song.credit}` : ''].filter(Boolean).join('\n');
+export const CAMPAIGN_TAG = '#projetlisnard';
+export const descriptionFooter = (song) => [CAMPAIGN_TAG, `Rejoins-nous sur Discord : ${DISCORD_URL}`, song?.credit ? `Musique : ${song.title} — ${song.credit}` : ''].filter(Boolean).join('\n');
 
 const foldText = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 

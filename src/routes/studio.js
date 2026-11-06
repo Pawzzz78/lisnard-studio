@@ -4,7 +4,7 @@
  * Le fichier vidéo d'origine n'est jamais servi : seuls des extraits (aperçu 360p, rendu final) en sortent.
  */
 import express, { Router } from 'express';
-import { getClipSuggestions, prepareSegments, CLIP_LIMITS } from '../clip-suggestions.js';
+import { getClipSuggestions, prepareSegments, CLIP_LIMITS, withPlayQuotes } from '../clip-suggestions.js';
 import { pool } from '../db.js';
 import { HttpError, ah, jsonErrors } from '../http-error.js';
 import { DEFAULT_STYLE, LIMITS, PRESETS } from '../../public/js/studio-core.js';
@@ -95,7 +95,7 @@ studioRouter.get(
   '/videos',
   ah(async (_req, res) => {
     const { rows } = await pool.query(
-      `SELECT ${COLS}, COALESCE(jsonb_array_length(c.content->'clips'), 0) AS suggestions
+      `SELECT ${COLS}, COALESCE(jsonb_array_length(c.content->'clips'), 0) + COALESCE(jsonb_array_length(v.play_quotes), 0) AS suggestions
        FROM videos v LEFT JOIN clip_suggestions c ON c.video_id = v.id
        WHERE ${CLIPPABLE} ORDER BY v.published_at DESC NULLS LAST, v.id DESC`,
     );
@@ -118,7 +118,7 @@ studioRouter.get(
     const v = await loadVideo(req.params.youtubeId);
     const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [v.id]);
     const lines = prepareSegments(rows).map((s) => [s.start_ms, s.end_ms, s.text]);
-    const sg = await getClipSuggestions(v.id);
+    const sg = await withPlayQuotes(v.id, await getClipSuggestions(v.id));
     res.json({
       video: { ...presentVideo(v), width: v.file_width, height: v.file_height, has_audio: v.file_has_audio },
       suggestions: (sg?.clips ?? []).map(({ start_ms, end_ms, duration_s, title, why, score, text, description }) => ({ start_ms, end_ms, duration_s, title, why, score, text, description: description ?? null })),
