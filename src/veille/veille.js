@@ -286,7 +286,8 @@ async function doRefresh(cfg, { trigger, fetchImpl }) {
       record.platforms[platform] = { status: 'failed', error: String(e.message).slice(0, 300) };
     }
   }
-  const { rows: need } = await pool.query('SELECT key, platform, cover_url FROM hashtag_posts WHERE NOT has_cover AND cover_url IS NOT NULL ORDER BY first_seen DESC LIMIT 300');
+  // Platform image URLs expire within days: older missing covers are not retried on every pass
+  const { rows: need } = await pool.query(`SELECT key, platform, cover_url FROM hashtag_posts WHERE NOT has_cover AND cover_url IS NOT NULL AND last_seen > now() - interval '7 days' ORDER BY first_seen DESC LIMIT 300`);
   let covers = 0;
   for (const p of need) {
     try {
