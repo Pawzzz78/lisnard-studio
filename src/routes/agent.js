@@ -1,7 +1,7 @@
 /**
  * API privée des agents IA, protégée par une clé (Authorization: Bearer lsk_…) :
  * - /api/agent/v1/… : exactement les routes du studio (vidéos, éléments de l'éditeur, aperçu, rendu, téléchargement) ;
- * - /api/agent/mcp : serveur MCP (HTTP « streamable », réponses JSON, sans session) qui expose les mêmes actions en outils ;
+ * - /api/agent/mcp (ou /api/agent/mcp/<clé> pour les clients sans en-tête, comme ChatGPT) : serveur MCP (HTTP « streamable », réponses JSON, sans session) qui expose les mêmes actions en outils ;
  * - /api/agent/files/:id?t=… : lien de téléchargement signé d'un clip prêt, utilisable sans la clé.
  */
 import crypto from 'node:crypto';
@@ -61,8 +61,7 @@ async function requireKey(req, res, next) {
   }
 }
 
-agentRouter.use(requireKey);
-agentRouter.use('/v1', studioRouter);
+agentRouter.use('/v1', requireKey, studioRouter);
 
 // --- MCP ------------------------------------------------------------------------------------------
 
@@ -89,25 +88,25 @@ const clipInput = {
 };
 
 const TOOLS = [
-  { name: 'list_videos', description: 'Liste les interviews disponibles dans le studio (les plus récentes d’abord), avec le nombre d’extraits proposés.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'list_videos', annotations: { readOnlyHint: true, openWorldHint: false }, description: 'Liste les interviews disponibles dans le studio (les plus récentes d’abord), avec le nombre d’extraits proposés.', inputSchema: { type: 'object', properties: {} } },
   {
-    name: 'get_video',
+    name: 'get_video', annotations: { readOnlyHint: true, openWorldHint: false },
     description: 'Détail d’une interview : extraits proposés (titres, début et fin en ms) et transcription ligne par ligne [start_ms, end_ms, texte].',
     inputSchema: { type: 'object', required: ['youtube_id'], properties: { youtube_id: { type: 'string' } } },
   },
-  { name: 'get_editor_options', description: 'Styles prêts à l’emploi, style par défaut, polices, musiques et limites (durée maximale, nombre d’extraits…).', inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_editor_options', annotations: { readOnlyHint: true, openWorldHint: false }, description: 'Styles prêts à l’emploi, style par défaut, polices, musiques et limites (durée maximale, nombre d’extraits…).', inputSchema: { type: 'object', properties: {} } },
   {
-    name: 'search_stock_images',
+    name: 'search_stock_images', annotations: { readOnlyHint: true, openWorldHint: false },
     description: 'Cherche des images libres de droits à insérer (b-roll) ; renvoie leurs identifiants.',
     inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, page: { type: 'integer' } } },
   },
-  { name: 'create_clip', description: 'Lance la création du clip vertical (MP4). Renvoie son identifiant : suis-le avec get_clip.', inputSchema: clipInput },
+  { name: 'create_clip', annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, description: 'Lance la création du clip vertical (MP4). Renvoie son identifiant : suis-le avec get_clip.', inputSchema: clipInput },
   {
-    name: 'get_clip',
+    name: 'get_clip', annotations: { readOnlyHint: true, openWorldHint: false },
     description: 'État d’un clip ; quand il est prêt, `download_url` donne le MP4 (lien valable une heure). `wait_s` attend jusqu’à 50 s qu’il soit prêt.',
     inputSchema: { type: 'object', required: ['clip_id'], properties: { clip_id: { type: 'string' }, wait_s: { type: 'integer', minimum: 0, maximum: 50 } } },
   },
-  { name: 'cancel_clip', description: 'Annule un clip en attente ou en cours.', inputSchema: { type: 'object', required: ['clip_id'], properties: { clip_id: { type: 'string' } } } },
+  { name: 'cancel_clip', annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }, description: 'Annule un clip en attente ou en cours.', inputSchema: { type: 'object', required: ['clip_id'], properties: { clip_id: { type: 'string' } } } },
 ];
 
 function clipView(req, job) {
@@ -186,7 +185,8 @@ const INSTRUCTIONS =
   'Studio de clips de David Lisnard. Démarche : list_videos → get_video (extraits proposés et transcription) → get_editor_options → ' +
   'create_clip (extraits en ms, style, musique…) → get_clip avec wait_s jusqu’à `done` → télécharge `download_url`.';
 
-agentRouter.post('/mcp', express.json({ limit: '200kb' }), async (req, res, next) => {
+const mcpPaths = ['/mcp', '/mcp/:urlKey'];
+agentRouter.post(mcpPaths, requireKey, express.json({ limit: '200kb' }), async (req, res, next) => {
   try {
     // Browsers may only call from the site itself (DNS rebinding); agents send no Origin
     const origin = req.get('origin');
@@ -201,7 +201,7 @@ agentRouter.post('/mcp', express.json({ limit: '200kb' }), async (req, res, next
   }
 });
 // No server-initiated stream: GET and DELETE are not offered
-agentRouter.all('/mcp', (_req, res) => res.status(405).set('Allow', 'POST').json({ error: 'Utilise POST.' }));
+agentRouter.all(mcpPaths, requireKey, (_req, res) => res.status(405).set('Allow', 'POST').json({ error: 'Utilise POST.' }));
 
 agentRouter.use((err, _req, res, next) => {
   if (err?.type === 'entity.parse.failed') return res.status(400).json(rpcError(null, -32700, 'JSON illisible.'));

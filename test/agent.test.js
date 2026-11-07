@@ -98,6 +98,19 @@ test('MCP robuste : params null, preset piégé, lot trop gros, origine étrang�
   assert.equal((await fetch(`${base}/api/agent/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: '{oops' })).status, 400);
 });
 
+test('compatibilité : clé dans l’adresse MCP (ChatGPT), Authorization sans « Bearer » (Grok), annotations des outils', { skip: !enabled }, async () => {
+  const { key } = await K.createKey('test-compat');
+  const ping = { jsonrpc: '2.0', id: 1, method: 'ping' };
+  const viaUrl = await fetch(`${base}/api/agent/mcp/${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ping) });
+  assert.deepEqual(await viaUrl.json(), { jsonrpc: '2.0', id: 1, result: {} });
+  assert.equal((await fetch(`${base}/api/agent/mcp/lsk_nope`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ping) })).status, 401);
+  const raw = await fetch(`${base}/api/agent/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: key }, body: JSON.stringify(ping) });
+  assert.equal(raw.status, 200);
+  const { result } = await (await rpc(key, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).json();
+  assert.equal(result.tools.find((t) => t.name === 'get_video').annotations.readOnlyHint, true);
+  assert.equal(result.tools.find((t) => t.name === 'create_clip').annotations.readOnlyHint, false);
+});
+
 // Last: exhausts this IP's bad-key allowance
 test('clés refusées en rafale : 429 après 30 essais par heure', { skip: !enabled }, async () => {
   let last;

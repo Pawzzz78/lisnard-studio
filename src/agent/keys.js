@@ -36,9 +36,9 @@ export async function findKey(raw) {
   return rows[0] ?? null;
 }
 
-/** Clé lue dans `Authorization: Bearer …` ou `X-Api-Key`. */
+/** Clé lue dans `Authorization` (avec ou sans « Bearer », pour Grok), `X-Api-Key`, ou l'adresse MCP secrète (ChatGPT). */
 export function keyFromRequest(req) {
   const auth = req.get('authorization') ?? '';
-  const m = /^Bearer\s+(\S+)$/i.exec(auth);
-  return m ? m[1] : (req.get('x-api-key') ?? null);
+  const m = /^(?:Bearer\s+)?(lsk_\S+)$/i.exec(auth.trim());
+  return m ? m[1] : (req.get('x-api-key') ?? req.params?.urlKey ?? null);
 }

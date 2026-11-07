@@ -290,7 +290,9 @@ qu'à choisir les extraits.
 Avec une clé API, un agent IA peut créer, personnaliser et télécharger des clips comme un visiteur du studio, en HTTP (`/api/agent/v1/…`) ou par MCP (`/api/agent/mcp`).
 - Les clés se créent et se révoquent dans l'admin, onglet « Agents IA ».
 - Le site public n'en parle pas.
-- Installation, utilisation, erreurs et sécurité : [docs/agents-api.md](docs/agents-api.md).
+- Compatible avec Claude, ChatGPT, Grok, Hermes Agent, Cursor et les autres clients MCP.
+- Doc pour les devs (clés, sécurité, compatibilité) : [docs/agents-api.md](docs/agents-api.md).
+- Guide à donner à l'agent avec sa clé (installation, outils, erreurs) : [docs/agent-guide.md](docs/agent-guide.md).
 
 ## Résumés automatiques
 
