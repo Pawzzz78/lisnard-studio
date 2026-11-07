@@ -24,7 +24,7 @@ let coverBase = '';
 /** Un élément tel que le renvoie l'acteur clockworks/tiktok-scraper. */
 const item = (id, o = {}) => ({
   id: String(id),
-  text: o.text ?? `Super clip #lisnard2027 numéro ${id} #politique`,
+  text: o.text ?? `Super clip #projetlisnard numéro ${id} #politique`,
   createTimeISO: o.date ?? iso(2),
   isAd: o.ad ?? false,
   authorMeta: { id: '99', name: o.author ?? `fan${id}`, nickName: o.nick ?? `Fan ${id}`, verified: false },
@@ -35,40 +35,40 @@ const item = (id, o = {}) => ({
   commentCount: o.comments ?? 10,
   shareCount: o.shares ?? 5,
   collectCount: o.saves ?? 2,
-  hashtags: o.hashtags ?? [{ name: 'lisnard2027' }, { name: 'politique' }],
+  hashtags: o.hashtags ?? [{ name: 'projetlisnard' }, { name: 'politique' }],
 });
 
 // --- lecture d'un élément ------------------------------------------------------------------------------------------------------
 
 test('élément de l\'acteur : champs lus, adresse nettoyée, nombres et date normalisés', () => {
-  const c = normalizeItem(item('7301234567890123456', { views: 12345, likes: 678, comments: 9, date: '2026-09-01T10:00:00.000Z' }), 'lisnard2027');
+  const c = normalizeItem(item('7301234567890123456', { views: 12345, likes: 678, comments: 9, date: '2026-09-01T10:00:00.000Z' }), 'projetlisnard');
   assert.equal(c.id, '7301234567890123456');
   assert.equal(c.url, 'https://www.tiktok.com/@fan7301234567890123456/video/7301234567890123456'); // sans ?lang=fr
   assert.deepEqual([c.views, c.likes, c.comments, c.shares, c.saves, c.duration_s], [12345, 678, 9, 5, 2, 31]);
   assert.equal(c.created_at, '2026-09-01T10:00:00.000Z');
-  assert.deepEqual(c.hashtags, ['lisnard2027', 'politique']);
+  assert.deepEqual(c.hashtags, ['projetlisnard', 'politique']);
   assert.equal(c.nickname, 'Fan 7301234567890123456');
   // variantes : date en secondes, statistiques regroupées, hashtags en texte
-  const v = normalizeItem({ id: '1234567890', desc: 'Bravo #Lisnard2027', createTime: 1_790_000_000, author: { uniqueId: 'marie.d' }, stats: { playCount: '500', diggCount: 50, commentCount: 5 }, hashtags: ['#Lisnard2027'] }, 'lisnard2027');
+  const v = normalizeItem({ id: '1234567890', desc: 'Bravo #Projetlisnard', createTime: 1_790_000_000, author: { uniqueId: 'marie.d' }, stats: { playCount: '500', diggCount: 50, commentCount: 5 }, hashtags: ['#Projetlisnard'] }, 'projetlisnard');
   assert.deepEqual([v.author, v.views, v.likes, v.comments, v.created_at], ['marie.d', 500, 50, 5, new Date(1_790_000_000_000).toISOString()]);
   assert.equal(v.url, 'https://www.tiktok.com/@marie.d/video/1234567890');
 });
 
 test('éléments écartés : publicité, autre hashtag, erreur de l\'acteur, identifiant ou auteur invalide ; doublons fusionnés', () => {
-  assert.equal(normalizeItem(item('1234567890', { ad: true }), 'lisnard2027').skip, 'ad');
-  assert.equal(normalizeItem(item('1234567891', { text: 'rien à voir', hashtags: [{ name: 'autre' }] }), 'lisnard2027').skip, 'hashtag');
-  assert.equal(normalizeItem({ error: 'No videos found', input: 'lisnard2027' }, 'lisnard2027').skip, 'error');
-  assert.equal(normalizeItem({ ...item('12'), id: 'abc' }, 'lisnard2027').skip, 'invalid');
-  assert.equal(normalizeItem({ ...item('1234567892'), authorMeta: { name: '../etc' } }, 'lisnard2027').skip, 'invalid');
+  assert.equal(normalizeItem(item('1234567890', { ad: true }), 'projetlisnard').skip, 'ad');
+  assert.equal(normalizeItem(item('1234567891', { text: 'rien à voir', hashtags: [{ name: 'autre' }] }), 'projetlisnard').skip, 'hashtag');
+  assert.equal(normalizeItem({ error: 'No videos found', input: 'projetlisnard' }, 'projetlisnard').skip, 'error');
+  assert.equal(normalizeItem({ ...item('12'), id: 'abc' }, 'projetlisnard').skip, 'invalid');
+  assert.equal(normalizeItem({ ...item('1234567892'), authorMeta: { name: '../etc' } }, 'projetlisnard').skip, 'invalid');
   assert.equal(normalizeItem(null, 'x').skip, 'invalid');
   // hashtag trouvé dans la légende seulement
-  assert.equal(normalizeItem({ ...item('1234567893'), hashtags: [] }, 'lisnard2027').skip, undefined);
-  const { clips, skipped } = normalizeItems([item('1234567894'), item('1234567894', { views: 5000 }), item('1234567895', { ad: true }), { error: 'x' }], 'lisnard2027');
+  assert.equal(normalizeItem({ ...item('1234567893'), hashtags: [] }, 'projetlisnard').skip, undefined);
+  const { clips, skipped } = normalizeItems([item('1234567894'), item('1234567894', { views: 5000 }), item('1234567895', { ad: true }), { error: 'x' }], 'projetlisnard');
   assert.equal(clips.length, 1);
   assert.equal(clips[0].views, 5000); // le dernier gagne
   assert.deepEqual(skipped, { ad: 1, error: 1 });
   // texte nettoyé : caractères de contrôle supprimés, longueur bornée
-  assert.ok(normalizeItem(item('1234567896', { text: `#lisnard2027 ${'a'.repeat(900)}\u0000\u0007` }), 'lisnard2027').text.length <= 600);
+  assert.ok(normalizeItem(item('1234567896', { text: `#projetlisnard ${'a'.repeat(900)}\u0000\u0007` }), 'projetlisnard').text.length <= 600);
 });
 
 test('adresses de vignettes : seulement TikTok / Apify en HTTPS', () => {
@@ -85,7 +85,7 @@ test('réglages : valeurs par défaut et poids du classement', () => {
     for (const k of ['WALL_HASHTAG', 'WALL_RESULTS', 'WALL_REFRESH_HOURS', 'WALL_WEIGHTS', 'APIFY_TIKTOK_ACTOR']) delete process.env[k];
     delete process.env.WALL_MAX;
     const d = wallConfig();
-    assert.deepEqual([d.hashtag, d.results, d.refreshHours, d.weights, d.actor, d.max], ['lisnard2027', 100, 24, [1, 10, 50], 'clockworks/tiktok-scraper', 13]);
+    assert.deepEqual([d.hashtag, d.results, d.refreshHours, d.weights, d.actor, d.max], ['projetlisnard', 100, 24, [1, 10, 50], 'clockworks/tiktok-scraper', 13]);
     Object.assign(process.env, { WALL_HASHTAG: '#Lisnard2028', WALL_RESULTS: '5000', WALL_REFRESH_HOURS: '0', WALL_WEIGHTS: '2, 20, 100', WALL_MAX: '500' });
     const c = wallConfig();
     assert.deepEqual([c.hashtag, c.results, c.refreshHours, c.weights, c.max], ['lisnard2028', 1000, 0, [2, 20, 100], 60]);
@@ -152,11 +152,11 @@ test('client Apify : lance l\'acteur, attend la fin, lit les résultats par page
   datasetItems = Array.from({ length: 7 }, (_, i) => ({ id: String(1000 + i) }));
   calls.length = 0;
   polls = 0;
-  const { items, run } = await runActor({ token: 'tok', actor: 'clockworks/tiktok-scraper', baseUrl: apifyBase, input: { hashtags: ['lisnard2027'], resultsPerPage: 7 }, maxItems: 7 });
+  const { items, run } = await runActor({ token: 'tok', actor: 'clockworks/tiktok-scraper', baseUrl: apifyBase, input: { hashtags: ['projetlisnard'], resultsPerPage: 7 }, maxItems: 7 });
   assert.equal(items.length, 7);
   assert.equal(run.usageTotalUsd, 0.17);
   const start = calls[0];
-  assert.deepEqual([start.method, start.path, start.auth, start.body.hashtags], ['POST', '/v2/acts/clockworks~tiktok-scraper/runs', 'Bearer tok', ['lisnard2027']]);
+  assert.deepEqual([start.method, start.path, start.auth, start.body.hashtags], ['POST', '/v2/acts/clockworks~tiktok-scraper/runs', 'Bearer tok', ['projetlisnard']]);
   assert.ok(!calls.some((c) => c.query.includes('token='))); // le jeton ne passe jamais dans l'adresse
   assert.ok(calls.filter((c) => c.path === '/v2/actor-runs/run1').length >= 2);
   // plus d'éléments que demandé : on s'arrête à maxItems, en plusieurs pages si besoin
@@ -242,7 +242,7 @@ after(async () => {
 test('mur vide avant la première actualisation ; admin protégée ; sans jeton l\'actualisation est refusée', { skip: !enabled }, async () => {
   const empty = await call('GET', '/api/wall', undefined, false);
   assert.equal(empty.status, 200);
-  assert.deepEqual([empty.body.clips, empty.body.total, empty.body.updated_at, empty.body.hashtag], [[], 0, null, 'lisnard2027']);
+  assert.deepEqual([empty.body.clips, empty.body.total, empty.body.updated_at, empty.body.hashtag], [[], 0, null, 'projetlisnard']);
   assert.match(empty.headers.get('cache-control'), /max-age=60/);
   for (const [m, p] of [['GET', '/api/admin/wall'], ['POST', '/api/admin/wall/refresh'], ['PATCH', '/api/admin/wall/clips/1234567'], ['PUT', '/api/admin/wall/authors/x']]) assert.equal((await call(m, p, {}, false)).status, 401, `${m} ${p}`);
   delete process.env.APIFY_TOKEN;
@@ -278,7 +278,7 @@ test('actualisation : résultats d\'Apify enregistrés, filtrés, classés ; vig
   assert.ok(last.last_run.sample_keys.includes('playCount') && last.last_run.sample_keys.includes('authorMeta'));
   // ce qui est envoyé à l'acteur
   const start = calls.find((c) => c.method === 'POST');
-  assert.deepEqual([start.body.hashtags, start.body.resultsPerPage, start.body.shouldDownloadVideos], [['lisnard2027'], 100, false]);
+  assert.deepEqual([start.body.hashtags, start.body.resultsPerPage, start.body.shouldDownloadVideos], [['projetlisnard'], 100, false]);
   assert.ok(!asked.some((u) => u.includes('evil')));
 
   // classement par défaut : score = vues + 10 × j'aime + 50 × commentaires
@@ -395,7 +395,7 @@ test('classement : 13 clips au plus, les meilleurs d\'après le score ; les ongl
   // 30 clips : le n° i a i × 1 000 vues (score croissant avec i) ; les plus récents sont les moins bons
   for (let i = 1; i <= 30; i++) {
     await pool.query(
-      `INSERT INTO wall_clips (id, url, author, text, hashtags, created_at, views, likes, comments, has_cover) VALUES ($1, $2, $3, '#lisnard2027', '["lisnard2027"]', now() - ($4 || ' days')::interval, $5, 0, 0, FALSE)`,
+      `INSERT INTO wall_clips (id, url, author, text, hashtags, created_at, views, likes, comments, has_cover) VALUES ($1, $2, $3, '#projetlisnard', '["projetlisnard"]', now() - ($4 || ' days')::interval, $5, 0, 0, FALSE)`,
       [String(8000000000000000000n + BigInt(i)), `https://www.tiktok.com/@u${i}/video/${8000000000000000000n + BigInt(i)}`, `u${i}`, String(31 - i), i * 1000],
     );
   }
@@ -420,6 +420,20 @@ test('classement : 13 clips au plus, les meilleurs d\'après le score ; les ongl
   process.env.WALL_MAX = '5';
   assert.deepEqual((await get('limit=60')).clips.map(n), [30, 29, 28, 27, 26]);
   delete process.env.WALL_MAX;
+});
+
+test('hashtag suivi : les clips gardés d\'un ancien hashtag ne sont plus classés', { skip: !enabled }, async () => {
+  await pool.query('DELETE FROM wall_clips');
+  const ins = (id, text, tags, views) =>
+    pool.query('INSERT INTO wall_clips (id, url, author, text, hashtags, created_at, views, likes, comments, has_cover) VALUES ($1, $2, $3, $4, $5::jsonb, now(), $6, 0, 0, FALSE)', [id, `https://www.tiktok.com/@u/video/${id}`, `u${id}`, text, JSON.stringify(tags), views]);
+  await ins('9000000000000000001', 'ancien #lisnard2027', ['lisnard2027'], 900000); // très vu, mais d'un ancien hashtag
+  await ins('9000000000000000002', 'nouveau #projetlisnard', ['projetlisnard'], 1000);
+  await ins('9000000000000000003', 'dans le texte seulement #ProjetLisnard', [], 500); // hashtag lu dans le texte
+  const r = (await call('GET', '/api/wall?limit=60', undefined, false)).body;
+  assert.deepEqual(r.clips.map((c) => c.id), ['9000000000000000002', '9000000000000000003']);
+  assert.equal(r.total, 2);
+  assert.equal(r.hashtag, 'projetlisnard');
+  await pool.query('DELETE FROM wall_clips');
 });
 
 test('mur : classement ou période inconnus refusés, même hérités de l\'objet', { skip: !enabled }, async () => {
