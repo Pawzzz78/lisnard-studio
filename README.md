@@ -285,6 +285,13 @@ qu'à choisir les extraits.
 - **Sur Railway** : le volume est monté sur `/data` (`STORAGE_DIR=/data/storage`) et ffmpeg est installé dans l'image grâce à la
   variable `NIXPACKS_APT_PKGS=ffmpeg` (le constructeur réellement utilisé est Nixpacks, comme l'indique `railway.json`).
 
+## API privée et serveur MCP pour les agents IA
+
+Avec une clé API, un agent IA peut créer, personnaliser et télécharger des clips comme un visiteur du studio, en HTTP (`/api/agent/v1/…`) ou par MCP (`/api/agent/mcp`).
+- Les clés se créent et se révoquent dans l'admin, onglet « Agents IA ».
+- Le site public n'en parle pas.
+- Installation, utilisation, erreurs et sécurité : [docs/agents-api.md](docs/agents-api.md).
+
 ## Résumés automatiques
 
 Chaque vidéo indexée a son **résumé, rédigé automatiquement** par un modèle (OpenRouter) à partir de la transcription : un
@@ -546,6 +553,7 @@ tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéo
   summarize.js       résumé d'une transcription (repères de temps, 2 étapes si très long, nettoyage)
   studio/            studio public : rendu ffmpeg (render.js), détection et reconnaissance des visages (faces.js, faces-worker.js, yunet.js, sface.js, identity.js, references.js, nn.js), mesure du fond des sous-titres (box-probe.js), images libres de droits Pixabay / Pexels (stock.js), polices (fonts.json), musiques d'origine et bibliothèque de l'admin (music.json, music.js)
   wall/              mur des clips : client Apify (apify.js), classement, vignettes, actualisation planifiée (wall.js)
+  agent/keys.js      clés API des agents IA (empreintes SHA-256, révocation)
   media.js           fichiers vidéo du studio : dépôt par morceaux, ffprobe, stockage
   clip-suggestions.js  extraits proposés par le LLM (numéros de lignes, horaires issus de la transcription)
   summaries.js       résumés stockés en base : génération, anti-doublons
@@ -557,7 +565,7 @@ tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéo
   sync.js            synchronisation : découverte des vidéos, file d'attente, planificateur
   youtube.js         extraction d'ID, métadonnées oEmbed
   auth.js            session admin (cookie signé HMAC), limiteur de tentatives
-  routes/            API du studio (/api/studio/…), du mur (/api/wall/…), santé (/api/health) et admin (/api/admin/…)
+  routes/            API du studio (/api/studio/…), des agents IA et serveur MCP (/api/agent/…), du mur (/api/wall/…), santé (/api/health) et admin (/api/admin/…)
 public/              studio (index.html), mur (mur/), mentions-legales/ et admin (admin/)
 test/                tests unitaires + test d'intégration (si DATABASE_URL défini)
 ```

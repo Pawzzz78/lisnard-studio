@@ -267,6 +267,7 @@ async function route() {
     else if (location.hash === '#/visages') await renderFaceReferences();
     else if (location.hash === '#/mur') await renderWallAdmin();
     else if (location.hash === '#/bibliotheque') await renderLibraryAdmin();
+    else if (location.hash === '#/agents') await renderAgentKeys();
     else await renderList();
     if (gen !== routeGen) return;
     const title = $app.querySelector('h2, h1');
@@ -294,6 +295,7 @@ function renderNav() {
     link('#/visages', 'Reconnaissance'),
     link('#/mur', 'Mur'),
     link('#/bibliotheque', 'Bibliothèque'),
+    link('#/agents', 'Agents IA'),
     h('a', { href: '/' }, 'Voir le site'),
     h(
       'a',
@@ -994,6 +996,81 @@ async function renderWallAdmin() {
         data.clips.length >= 300 ? h('p', { class: 'status' }, 'Les 300 clips les mieux classés sont listés.') : null),
     );
     if (running) timer = setTimeout(reload, 3000);
+  }
+  draw();
+  $app.replaceChildren(root);
+}
+
+async function renderAgentKeys() {
+  const gen = routeGen;
+  let { keys } = await api('GET', '/agent-keys');
+  if (gen !== routeGen) return;
+  const root = h('div');
+  const note = h('p', { class: 'status', role: 'status' });
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const base = location.origin;
+  let fresh = null; // key just created: shown once
+
+  async function reload() {
+    ({ keys } = await api('GET', '/agent-keys'));
+    if (gen === routeGen) draw();
+  }
+  function draw() {
+    const name = h('input', { type: 'text', maxlength: 80, placeholder: 'Nom (ex. : agent TikTok de Paul)', 'aria-label': 'Nom de la clé' });
+    const create = h('button', { class: 'btn', type: 'submit' }, 'Créer une clé');
+    const form = h('form', { class: 'actions', onsubmit: (ev) => {
+      ev.preventDefault();
+      busy(create, async () => {
+        try {
+          fresh = await api('POST', '/agent-keys', { name: name.value });
+          status(note, '', '');
+          await reload();
+        } catch (e) {
+          if (e instanceof AuthError) return renderLogin();
+          status(note, e.message, 'err');
+        }
+      });
+    } }, name, create);
+    const revoke = (k) => (ev) => {
+      if (!confirm(`Révoquer la clé « ${k.name} » ? L’agent qui l’utilise n’aura plus accès.`)) return;
+      busy(ev.currentTarget, async () => {
+        try {
+          await api('DELETE', `/agent-keys/${k.id}`);
+          status(note, 'Clé révoquée.', 'ok');
+          await reload();
+        } catch (e) {
+          if (e instanceof AuthError) return renderLogin();
+          status(note, e.message, 'err');
+        }
+      });
+    };
+    const mcpConfig = JSON.stringify({ mcpServers: { 'lisnard-studio': { type: 'http', url: `${base}/api/agent/mcp`, headers: { Authorization: `Bearer ${fresh?.key ?? 'lsk_…'}` } } } }, null, 2);
+    root.replaceChildren(
+      h('section', { class: 'panel' },
+        h('h2', {}, 'Agents IA'),
+        h('p', { class: 'status' }, 'Une clé donne à un agent IA les mêmes possibilités qu’un visiteur du studio : choisir les extraits, personnaliser le clip (style, musique, zooms, images), le créer et télécharger le MP4. Aucun accès à l’admin.'),
+        h('p', { class: 'status' }, 'Serveur MCP : ', h('code', {}, `${base}/api/agent/mcp`), ' · API HTTP : ', h('code', {}, `${base}/api/agent/v1/…`), ' (mêmes routes que ', h('code', {}, '/api/studio'), '), avec l’en-tête ', h('code', {}, 'Authorization: Bearer lsk_…'), '.'),
+        form,
+        fresh ? h('div', { class: 'panel' },
+          h('p', { class: 'status ok' }, `Clé « ${fresh.name} » créée. Copie-la maintenant : elle ne sera plus affichée.`),
+          h('p', {}, h('code', {}, fresh.key), ' ', h('button', { class: 'btn secondary small', type: 'button', onclick: () => navigator.clipboard?.writeText(fresh.key).then(() => status(note, 'Clé copiée.', 'ok')) }, 'Copier')),
+          h('p', { class: 'status' }, 'Configuration MCP (Claude Code, Claude Desktop…) :'),
+          h('pre', {}, mcpConfig)) : null),
+      note,
+      h('section', { class: 'panel' },
+        h('h3', {}, `Clés (${keys.filter((k) => !k.revoked_at).length} active${keys.filter((k) => !k.revoked_at).length > 1 ? 's' : ''})`),
+        keys.length
+          ? h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Nom'), h('th', {}, 'Début de la clé'), h('th', {}, 'Créée'), h('th', {}, 'Dernier usage'), h('th', {}, 'Appels'), h('th', {}, ''))),
+            h('tbody', {}, keys.map((k) => h('tr', { class: k.revoked_at ? 'wall-hidden' : '' },
+              h('td', {}, k.name, k.revoked_at ? h('span', { class: 'badge' }, 'Révoquée') : null),
+              h('td', {}, h('code', {}, `${k.hint}…`)),
+              h('td', {}, when(k.created_at)),
+              h('td', {}, when(k.last_used_at)),
+              h('td', { class: 'num' }, Number(k.uses).toLocaleString('fr-FR')),
+              h('td', {}, k.revoked_at ? null : h('button', { class: 'btn secondary small', type: 'button', onclick: revoke(k) }, 'Révoquer'))))))
+          : h('p', { class: 'status' }, 'Aucune clé pour le moment.')),
+    );
   }
   draw();
   $app.replaceChildren(root);
