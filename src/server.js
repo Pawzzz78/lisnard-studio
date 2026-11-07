@@ -6,6 +6,7 @@ import { initDb } from './db.js';
 import { ffmpegAvailable, storageDir } from './media.js';
 import { requireMember } from './members/session.js';
 import { adminRouter } from './routes/admin.js';
+import { agentRouter } from './routes/agent.js';
 import { libraryRouter } from './routes/library.js';
 import { membersRouter } from './routes/members.js';
 import { publicRouter } from './routes/public.js';
@@ -58,6 +59,7 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/auth', membersRouter);
   app.use('/api/studio', requireMember, studioRouter);
+  app.use('/api/agent', agentRouter); // agents IA : clé API, pas de compte adhérent
   app.use('/api/wall', wallRouter);
   app.use('/api/library', libraryRouter);
   app.use('/api', publicRouter);
