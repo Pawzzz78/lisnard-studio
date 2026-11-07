@@ -91,6 +91,11 @@ test('MCP robuste : params null, preset piégé, lot trop gros, origine étrang�
   assert.equal((await (await rpc(key, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: null })).json()).error.code, -32602);
   const proto = await (await rpc(key, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'create_clip', arguments: { youtube_id: 'x', extracts: [], preset: '__proto__' } } })).json();
   assert.match(proto.result.content[0].text, /inconnu/);
+  // names inherited from Object.prototype are not tools: same answer as any unknown tool
+  for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    const r = await (await rpc(key, { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name, arguments: {} } })).json();
+    assert.equal(r.error?.code, -32602, `${name} : outil inconnu`);
+  }
   const big = Array.from({ length: 21 }, (_, i) => ({ jsonrpc: '2.0', id: i, method: 'ping' }));
   assert.equal((await rpc(key, big)).status, 400);
   assert.equal((await rpc(key, [])).status, 400);

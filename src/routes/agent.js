@@ -166,7 +166,7 @@ async function handleRpc(req, msg) {
     case 'tools/list':
       return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
     case 'tools/call': {
-      const fn = handlers[params.name];
+      const fn = Object.hasOwn(handlers, String(params.name)) ? handlers[params.name] : null; // not `constructor`, `toString`, `__proto__`…
       if (!fn) return rpcError(id, -32602, `Outil inconnu : ${params.name}`);
       try {
         const data = await fn(req, params.arguments && typeof params.arguments === 'object' ? params.arguments : {});
