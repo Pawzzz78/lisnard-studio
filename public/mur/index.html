@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Le mur #projetlisnard – Studio Lisnard</title>
-  <meta name="description" content="Toutes les publications TikTok et Instagram avec #projetlisnard, et les comptes qui les publient.">
+  <title>Le mur des clips – Studio Lisnard</title>
+  <meta name="description" content="Les TikToks les plus vus, aimés et commentés avec le hashtag #lisnard2027, classés automatiquement.">
   <meta name="theme-color" content="#1d257a">
   <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/montserrat-variable-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -12,7 +12,7 @@
   <link rel="preload" href="/fonts/fraunces-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/theme.css">
   <link rel="stylesheet" href="/css/app.css">
-  <link rel="stylesheet" href="/css/veille.css">
+  <link rel="stylesheet" href="/css/wall.css">
 </head>
 <body>
   <header class="site-header">
@@ -22,49 +22,59 @@
     </div>
   </header>
 
-    <section class="hero compact">
+  <section class="hero compact wall-hero">
     <div class="wrap">
       <p class="eyebrow">Le mur</p>
-      <h1>Qui publie <em>#projetlisnard</em></h1>
-      <p>Toutes les publications TikTok et Instagram avec <strong>#projetlisnard</strong>, et les comptes qui les publient. La liste se met à jour toute seule.</p>
+      <h1>Les meilleurs <em>TikToks</em></h1>
+      <p>Les vidéos les plus vues, aimées et commentées avec <strong>#lisnard2027</strong>. Le classement se met à jour tout seul.</p>
+      <div class="hero-stamp" id="stamp" aria-hidden="true" hidden><span>Top</span><strong id="stamp-n">13</strong></div>
     </div>
+    <div class="torn-edge" data-torn="t" aria-hidden="true"></div>
   </section>
 
-  <main class="wrap veille" id="veille">
-    <ul class="vl-totals" id="totals" aria-label="En chiffres"></ul>
-
-    <div class="vl-bar" role="group" aria-label="Filtres">
-      <div class="vl-pills" id="platforms" role="group" aria-label="Plateforme"></div>
-      <label class="vl-sort">Trier
-        <select id="sort">
-          <option value="recent">Les plus récentes</option>
-          <option value="views">Les plus vues</option>
-          <option value="likes">Les plus aimées</option>
+  <main class="wrap wall" id="wall">
+    <div class="wall-bar" id="wall-bar" role="group" aria-label="Classement">
+      <div class="pills" id="sorts" role="group" aria-label="Trier par"></div>
+      <label class="wall-period">Période
+        <select id="period">
+          <option value="7">7 derniers jours</option>
+          <option value="30">30 derniers jours</option>
+          <option value="all">Depuis le début</option>
         </select>
       </label>
     </div>
-    <p class="vl-updated" id="updated" aria-live="polite"></p>
+    <p class="wall-updated" id="updated" aria-live="polite"></p>
 
-    <div class="vl-layout">
-      <section class="vl-authors" aria-labelledby="authors-title">
-        <h2 id="authors-title">Les comptes</h2>
-        <ol id="authors"></ol>
-      </section>
-      <section class="vl-posts" aria-labelledby="posts-title">
-        <h2 id="posts-title">Les publications</h2>
-        <p class="vl-filter" id="filter" hidden></p>
-        <ul class="vl-grid" id="grid"></ul>
-        <p class="vl-state" id="state" role="status">Chargement…</p>
-        <button class="btn secondary vl-more" id="more" type="button" hidden>Voir plus de publications</button>
-      </section>
-    </div>
+    <ol class="podium" id="podium" aria-label="Podium"></ol>
+    <h2 class="wall-sub" id="sub" hidden></h2>
+    <ol class="clip-grid" id="grid"></ol>
+    <p class="wall-empty" id="state" role="status">Chargement du mur…</p>
 
-    <aside class="vl-cta">
-      <h2>Ajoute ta publication</h2>
-      <p>Crée ton clip dans le studio et publie-le sur TikTok ou Instagram avec <strong>#projetlisnard</strong> : il apparaîtra ici à la prochaine mise à jour.</p>
-      <a class="btn pink" href="/">Créer mon clip</a>
+    <aside class="wall-cta" data-torn="tb">
+      <span class="tape tape-l" aria-hidden="true"></span><span class="tape tape-r" aria-hidden="true"></span>
+      <div>
+        <p class="eyebrow">À toi de jouer</p>
+        <h2>Crée ton clip et rejoins le mur</h2>
+        <p>Choisis un extrait d’interview dans le studio, ajoute sous-titres et musique, puis publie-le sur TikTok avec <strong>#lisnard2027</strong> : il apparaîtra ici à la prochaine mise à jour.</p>
+      </div>
+      <a class="btn pink" href="/">Créer mon TikTok</a>
     </aside>
+    <p class="wall-note" id="explain"></p>
   </main>
+
+  <dialog class="clip-dialog" id="dialog" aria-labelledby="dialog-title">
+    <span class="tape" aria-hidden="true"></span>
+    <form method="dialog" class="dialog-close"><button aria-label="Fermer" class="close">×</button></form>
+    <div class="dialog-scroll">
+      <h2 id="dialog-title"></h2>
+      <p class="dialog-text clamped" id="dialog-text"></p>
+      <button class="dialog-more" id="dialog-more" type="button" aria-expanded="false" aria-controls="dialog-text" hidden>Voir plus</button>
+      <div class="dialog-stats" id="dialog-stats"></div>
+      <div class="dialog-player" id="dialog-player"></div>
+      <p class="dialog-note">Le lecteur de TikTok se charge à l’ouverture de cette fenêtre : TikTok peut alors déposer ses propres cookies.</p>
+      <a class="btn secondary small" id="dialog-link" target="_blank" rel="noopener noreferrer">Ouvrir sur TikTok</a>
+    </div>
+  </dialog>
 
   <footer class="site-footer">
     <div class="wrap">
@@ -73,6 +83,6 @@
       <p>Initiative de soutiens de David Lisnard. Site édité de façon indépendante, ni par Nouvelle Énergie ni par l’équipe de campagne. · <a href="/mentions-legales/">Mentions légales</a></p>
     </div>
   </footer>
-  <script src="/js/veille.js" type="module"></script>
+  <script src="/js/wall.js" type="module"></script>
 </body>
 </html>

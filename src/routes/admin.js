@@ -14,12 +14,13 @@ import { HttpError, ah, jsonErrors } from '../http-error.js';
 import { clipsAdminRouter } from './clips-admin.js';
 import { removeVideoFiles } from '../media.js';
 import { facesAdminRouter } from './faces-admin.js';
-import { veilleAdminRouter } from './veille-admin.js';
+import { wallAdminRouter } from './wall-admin.js';
 import { libraryAdminRouter } from './library-admin.js';
 import { musicAdminRouter } from './music-admin.js';
 import { cancelAnalysis } from '../studio/faces.js';
 import { studioStats } from '../studio/stats.js';
 import { syncRouter } from './sync-admin.js';
+import { createKey, listKeys, revokeKey } from '../agent/keys.js';
 import { YouTubeApiError } from '../youtube.js';
 import { fetchLocalized } from '../localize.js';
 import { LlmError } from '../openrouter.js';
@@ -66,6 +67,14 @@ adminRouter.get('/config', (_req, res) =>
 
 adminRouter.use('/sync', syncRouter);
 
+// Clés API des agents IA
+adminRouter.get('/agent-keys', ah(async (_req, res) => res.json({ keys: await listKeys() })));
+adminRouter.post('/agent-keys', ah(async (req, res) => res.status(201).json(await createKey(req.body?.name))));
+adminRouter.delete('/agent-keys/:id', ah(async (req, res) => {
+  if (!/^\d{1,9}$/.test(req.params.id) || !(await revokeKey(req.params.id))) throw new HttpError(404, 'Clé introuvable ou déjà révoquée.');
+  res.json({ ok: true });
+}));
+
 /** Usage du studio : clips créés, téléchargés, partagés, personnes. */
 adminRouter.get(
   '/studio/stats',
@@ -75,7 +84,7 @@ adminRouter.get(
   },
 );
 adminRouter.use('/library', libraryAdminRouter); // bibliothèque de clips : modération
-adminRouter.use('/veille', veilleAdminRouter); // veille #projetlisnard : actualisation et modération
+adminRouter.use('/wall', wallAdminRouter); // mur des clips : actualisation et modération
 adminRouter.use('/faces', facesAdminRouter); // photos de référence de la personne à reconnaître
 adminRouter.use('/studio/music', musicAdminRouter); // bibliothèque de musiques du studio
 adminRouter.use('/videos/:id', clipsAdminRouter); // fichier vidéo, clips autorisés, extraits proposés

@@ -267,6 +267,7 @@ async function route() {
     else if (location.hash === '#/visages') await renderFaceReferences();
     else if (location.hash === '#/mur') await renderWallAdmin();
     else if (location.hash === '#/bibliotheque') await renderLibraryAdmin();
+    else if (location.hash === '#/agents') await renderAgentKeys();
     else await renderList();
     if (gen !== routeGen) return;
     const title = $app.querySelector('h2, h1');
@@ -294,6 +295,7 @@ function renderNav() {
     link('#/visages', 'Reconnaissance'),
     link('#/mur', 'Mur'),
     link('#/bibliotheque', 'Bibliothèque'),
+    link('#/agents', 'Agents IA'),
     h('a', { href: '/' }, 'Voir le site'),
     h(
       'a',
@@ -903,7 +905,7 @@ async function renderFaceReferences() {
 
 async function renderWallAdmin() {
   const gen = routeGen;
-  let data = await api('GET', '/veille');
+  let data = await api('GET', '/wall');
   if (gen !== routeGen) return;
   const root = h('div');
   const note = h('p', { class: 'status', role: 'status' });
@@ -915,11 +917,10 @@ async function renderWallAdmin() {
   };
   const fmtNum = (n) => Number(n).toLocaleString('fr-FR');
   const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
-  const LABEL = { tiktok: 'TikTok', instagram: 'Instagram' };
 
   async function reload() {
     try {
-      data = await api('GET', '/veille');
+      data = await api('GET', '/wall');
     } catch (e) {
       if (e instanceof AuthError) return renderLogin();
     }
@@ -938,64 +939,140 @@ async function renderWallAdmin() {
       await reload();
     });
   const go = (fn, okMsg) => (ev) => act(ev.currentTarget, fn, okMsg);
-  const authorUrl = (platform, author) => `/veille/authors/${platform}/${encodeURIComponent(author)}`;
 
   function draw() {
     clearTimeout(timer);
-    const last = data.last_run;
+    const { config: cfg, last_run: last, counts, busy: wallBusy } = data;
     // A 'running' row older than 30 min is a leftover from a restart
     const stale = last?.status === 'running' && Date.now() - new Date(last.started_at).getTime() > 30 * 60 * 1000;
-    const running = Boolean(data.busy) || (last?.status === 'running' && !stale);
-    const refreshBtn = h('button', { class: 'btn', type: 'button', disabled: running || !data.has_token }, running ? 'Actualisation en cours…' : 'Actualiser maintenant');
-    refreshBtn.addEventListener('click', go(() => api('POST', '/veille/refresh', {}), 'Actualisation lancée : elle prend quelques minutes (Apify visite TikTok et Instagram).'));
-    const platformText = (pl) => {
-      const r = last?.platforms?.[pl];
-      if (!r) return null;
-      if (r.status !== 'ok') return h('p', { class: 'status err' }, `${LABEL[pl]} : échec (${r.error}).`);
-      const empty = r.kept === 0 && (r.received === 0 || r.skipped?.error === r.received);
-      if (empty) return h('p', { class: 'status' }, `${LABEL[pl]} : aucune publication avec #${data.hashtag} pour l’instant.`);
-      const broken = r.received > 0 && r.kept === 0;
-      return h('p', { class: broken ? 'status err' : 'status' },
-        `${LABEL[pl]} : ${fmtNum(r.received)} reçues, ${fmtNum(r.kept)} retenues, ${fmtNum(r.added)} nouvelle${r.added > 1 ? 's' : ''}${r.cost_usd != null ? `, coût Apify ${r.cost_usd.toFixed(2).replace('.', ',')} $` : ''}.`,
-        broken ? ` Le format de l’acteur a peut-être changé. Champs reçus : ${(r.sample_keys ?? []).join(', ') || '(aucun)'}.` : '');
-    };
+    const running = Boolean(wallBusy) || (last?.status === 'running' && !stale);
+    const refreshBtn = h('button', { class: 'btn', type: 'button', disabled: running || !cfg.has_token || !cfg.enabled }, running ? 'Actualisation en cours…' : 'Actualiser maintenant');
+    refreshBtn.addEventListener('click', go(() => api('POST', '/wall/refresh', {}), 'Actualisation lancée : elle prend quelques minutes (Apify visite TikTok).'));
+    const perRun = cfg.results * 0.0017;
     const lastText = !last
       ? 'Jamais actualisé.'
       : last.status === 'running'
-        ? stale ? `Une actualisation commencée le ${when(last.started_at)} semble interrompue. Tu peux en lancer une nouvelle.` : `Actualisation en cours depuis ${when(last.started_at)}…`
-        : `Dernière actualisation ${last.status === 'ok' ? 'réussie' : 'en échec'} : ${when(last.finished_at)} (${last.trigger === 'schedule' ? 'automatique' : 'à la demande'}), ${fmtNum(last.covers ?? 0)} vignette${last.covers > 1 ? 's' : ''} copiée${last.covers > 1 ? 's' : ''}.`;
+        ? stale
+          ? `Une actualisation commencée le ${when(last.started_at)} semble interrompue (redémarrage du serveur ?). Tu peux en lancer une nouvelle.`
+          : `Actualisation en cours depuis ${when(last.started_at)}…`
+        : last.status === 'ok'
+          ? `Dernière actualisation réussie : ${when(last.finished_at)} (${last.trigger === 'schedule' ? 'automatique' : 'à la demande'}) : ${fmtNum(last.received ?? 0)} vidéos reçues, ${fmtNum(last.kept ?? 0)} retenues, ${fmtNum(last.added ?? 0)} nouvelle${last.added > 1 ? 's' : ''}, ${fmtNum(last.covers ?? 0)} vignette${last.covers > 1 ? 's' : ''} copiée${last.covers > 1 ? 's' : ''}${last.cost_usd != null ? `, coût Apify ${last.cost_usd.toFixed(2).replace('.', ',')} $` : ''}.`
+          : `Dernière tentative en échec ou interrompue (${when(last.finished_at ?? last.started_at)}) : ${last.error ?? 'erreur inconnue'}`;
+    const skipped = last?.status === 'ok' && last.skipped ? Object.entries(last.skipped).map(([k, v]) => `${v} ${{ ad: 'publicité(s)', hashtag: 'sans le hashtag', error: 'erreur(s) de l’acteur', invalid: 'illisible(s)' }[k] ?? k}`).join(', ') : '';
 
-    const row = (p) =>
-      h('tr', { class: p.hidden || p.author_hidden ? 'wall-hidden' : '' },
-        h('td', {}, p.cover ? h('img', { src: p.cover, alt: '', width: 36, height: 64, loading: 'lazy', class: 'wall-thumb' }) : h('span', { class: 'wall-thumb none' }, '·')),
-        h('td', {}, h('span', { class: 'badge' }, LABEL[p.platform]), ' ', h('a', { href: p.url, target: '_blank', rel: 'noopener noreferrer' }, `@${p.author}`), p.hidden || p.author_hidden ? h('span', { class: 'badge' }, 'Masqué') : null, h('div', { class: 'status wall-text' }, p.text)),
-        h('td', {}, when(p.created_at)),
-        h('td', { class: 'num' }, fmtNum(p.views)),
-        h('td', { class: 'num' }, fmtNum(p.likes)),
+    const clipRow = (c) =>
+      h('tr', { class: c.hidden || c.author_hidden ? 'wall-hidden' : '' },
+        h('td', {}, c.cover ? h('img', { src: c.cover, alt: '', width: 36, height: 64, loading: 'lazy', class: 'wall-thumb' }) : h('span', { class: 'wall-thumb none' }, '·')),
+        h('td', {}, h('a', { href: c.url, target: '_blank', rel: 'noopener noreferrer' }, `@${c.author}`), c.hidden || c.author_hidden ? h('span', { class: 'badge' }, 'Masqué') : null, h('div', { class: 'status wall-text' }, c.text)),
+        h('td', { class: 'num' }, fmtNum(c.views)),
+        h('td', { class: 'num' }, fmtNum(c.likes)),
+        h('td', { class: 'num' }, fmtNum(c.comments)),
+        h('td', { class: 'num' }, h('strong', {}, fmtNum(c.score))),
         h('td', {}, h('div', { class: 'actions' },
-          h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('PATCH', `/veille/posts/${p.key}`, { hidden: !p.hidden }), p.hidden ? 'Publication rétablie.' : 'Publication masquée.') }, p.hidden ? 'Rétablir' : 'Masquer'),
-          h('button', { class: 'btn secondary small', type: 'button', title: 'Masque toutes les publications de ce compte', onclick: go(() => api('PUT', authorUrl(p.platform, p.author), { hidden: !p.author_hidden }), p.author_hidden ? 'Compte rétabli.' : 'Compte masqué.') }, p.author_hidden ? 'Rétablir le compte' : 'Masquer le compte'))));
+          h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('PATCH', `/wall/clips/${c.id}`, { hidden: !c.hidden }), c.hidden ? 'Clip rétabli.' : 'Clip masqué.') }, c.hidden ? 'Rétablir' : 'Masquer'),
+          h('button', { class: 'btn secondary small', type: 'button', title: 'Masque tous les clips de cet auteur', onclick: go(() => api('PUT', `/wall/authors/${encodeURIComponent(c.author)}`, { hidden: !c.author_hidden }), c.author_hidden ? 'Auteur rétabli.' : 'Auteur masqué.') }, c.author_hidden ? 'Rétablir l’auteur' : 'Masquer l’auteur'))));
 
     root.replaceChildren(
       h('section', { class: 'panel' },
-        h('h2', {}, `Le mur (#${data.hashtag})`),
-        h('p', { class: 'status' }, `Les publications TikTok et Instagram avec #${data.hashtag} sont récupérées avec Apify (acteurs ${data.actors.tiktok} et ${data.actors.instagram}) toutes les ${data.refresh_hours} h, et listées sur la page publique « Le mur » avec les comptes qui les publient. `, h('a', { href: '/mur/', target: '_blank' }, 'Voir le mur')),
-        !data.has_token ? unavailable('la connexion à Apify n’est pas configurée.', 'APIFY_TOKEN') : null,
+        h('h2', {}, 'Mur des clips'),
+        h('p', { class: 'status' }, `Les TikToks publiés avec #${cfg.hashtag} sont récupérés avec Apify (acteur ${cfg.actor}), classés par vues, j’aime et commentaires (score = ${cfg.weights[0]} × vues + ${cfg.weights[1]} × j’aime + ${cfg.weights[2]} × commentaires), et les ${cfg.max} meilleurs sont affichés sur la page publique « Le mur ». `, h('a', { href: '/mur/', target: '_blank' }, 'Voir le mur')),
+        !cfg.has_token ? unavailable('la connexion à Apify (récupération des TikToks) n’est pas configurée.', 'APIFY_TOKEN') : null,
+        !cfg.enabled ? unavailable('le mur est désactivé.', 'WALL_ENABLED=false') : null,
         h('p', { class: 'status' }, lastText),
-        platformText('tiktok'),
-        platformText('instagram'),
+        skipped ? h('p', { class: 'status' }, `Écartés : ${skipped}.`) : null,
+        last?.status === 'ok' && last.received > 0 && last.kept === 0 ? h('p', { class: 'status err' }, `Aucune vidéo retenue sur ${last.received} reçues : le format des résultats de l’acteur a peut-être changé. Champs du premier élément : ${(last.sample_keys ?? []).join(', ') || '(aucun)'}.`) : null,
+        last?.status === 'ok' && last.received === 0 ? h('p', { class: 'status err' }, `Apify n’a renvoyé aucune vidéo pour #${cfg.hashtag} : vérifie l’orthographe du hashtag et le crédit Apify.`) : null,
+        h('p', { class: 'status' }, `Actualisation ${cfg.refresh_hours ? `automatique toutes les ${cfg.refresh_hours} h` : 'à la demande seulement'} · ${fmtNum(cfg.results)} vidéos demandées à chaque fois, soit environ ${perRun.toFixed(2).replace('.', ',')} $ d’Apify par actualisation (1,70 $ pour 1 000 résultats)${cfg.refresh_hours ? `, ${(perRun * (24 / cfg.refresh_hours) * 30).toFixed(0)} $ par mois` : ''}.`),
         h('div', { class: 'actions' }, refreshBtn)),
       note,
       h('section', { class: 'panel' },
-        h('h3', {}, `Publications (${fmtNum(data.posts.length)}${data.posts.length >= 300 ? ' plus récentes' : ''})`),
-        data.hidden_authors.length ? h('p', { class: 'status' }, 'Comptes masqués : ', data.hidden_authors.map((a) => h('button', { class: 'btn secondary small', type: 'button', title: 'Rétablir', onclick: go(() => api('PUT', authorUrl(a.platform, a.author), { hidden: false }), 'Compte rétabli.') }, `${LABEL[a.platform]} @${a.author} ×`))) : null,
-        data.posts.length
+        h('h3', {}, `Clips (${fmtNum(counts.total)}, dont ${fmtNum(counts.hidden)} masqué${counts.hidden > 1 ? 's' : ''}, ${fmtNum(counts.covers)} avec vignette)`),
+        data.hidden_authors.length ? h('p', { class: 'status' }, 'Auteurs masqués : ', data.hidden_authors.map((a) => h('button', { class: 'btn secondary small', type: 'button', title: 'Rétablir', onclick: go(() => api('PUT', `/wall/authors/${encodeURIComponent(a)}`, { hidden: false }), 'Auteur rétabli.') }, `@${a} ×`))) : null,
+        data.clips.length
           ? h('div', { class: 'wall-table-wrap' }, h('table', { class: 'videos wall-table' },
-            h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Publication'), h('th', {}, 'Date'), h('th', {}, 'Vues'), h('th', {}, 'J’aime'), h('th', {}, ''))),
-            h('tbody', {}, data.posts.map(row))))
-          : h('p', { class: 'status' }, 'Aucune publication pour le moment : lance une actualisation.')),
+            h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Clip'), h('th', {}, 'Vues'), h('th', {}, 'J’aime'), h('th', {}, 'Comm.'), h('th', {}, 'Score'), h('th', {}, ''))),
+            h('tbody', {}, data.clips.map(clipRow))))
+          : h('p', { class: 'status' }, 'Aucun clip pour le moment : lance une actualisation.'),
+        data.clips.length >= 300 ? h('p', { class: 'status' }, 'Les 300 clips les mieux classés sont listés.') : null),
     );
     if (running) timer = setTimeout(reload, 3000);
+  }
+  draw();
+  $app.replaceChildren(root);
+}
+
+async function renderAgentKeys() {
+  const gen = routeGen;
+  let { keys } = await api('GET', '/agent-keys');
+  if (gen !== routeGen) return;
+  const root = h('div');
+  const note = h('p', { class: 'status', role: 'status' });
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const base = location.origin;
+  let fresh = null; // key just created: shown once
+
+  async function reload() {
+    ({ keys } = await api('GET', '/agent-keys'));
+    if (gen === routeGen) draw();
+  }
+  function draw() {
+    const name = h('input', { type: 'text', maxlength: 80, placeholder: 'Nom (ex. : agent TikTok de Paul)', 'aria-label': 'Nom de la clé' });
+    const create = h('button', { class: 'btn', type: 'submit' }, 'Créer une clé');
+    const form = h('form', { class: 'actions', onsubmit: (ev) => {
+      ev.preventDefault();
+      busy(create, async () => {
+        try {
+          fresh = await api('POST', '/agent-keys', { name: name.value });
+          status(note, '', '');
+          await reload();
+        } catch (e) {
+          if (e instanceof AuthError) return renderLogin();
+          status(note, e.message, 'err');
+        }
+      });
+    } }, name, create);
+    const revoke = (k) => (ev) => {
+      if (!confirm(`Révoquer la clé « ${k.name} » ? L’agent qui l’utilise n’aura plus accès.`)) return;
+      busy(ev.currentTarget, async () => {
+        try {
+          await api('DELETE', `/agent-keys/${k.id}`);
+          status(note, 'Clé révoquée.', 'ok');
+          await reload();
+        } catch (e) {
+          if (e instanceof AuthError) return renderLogin();
+          status(note, e.message, 'err');
+        }
+      });
+    };
+    const mcpConfig = JSON.stringify({ mcpServers: { 'lisnard-studio': { type: 'http', url: `${base}/api/agent/mcp`, headers: { Authorization: `Bearer ${fresh?.key ?? 'lsk_…'}` } } } }, null, 2);
+    root.replaceChildren(
+      h('section', { class: 'panel' },
+        h('h2', {}, 'Agents IA'),
+        h('p', { class: 'status' }, 'Une clé donne à un agent IA les mêmes possibilités qu’un visiteur du studio : choisir les extraits, personnaliser le clip (style, musique, zooms, images), le créer et télécharger le MP4. Aucun accès à l’admin.'),
+        h('p', { class: 'status' }, 'Serveur MCP : ', h('code', {}, `${base}/api/agent/mcp`), ' · API HTTP : ', h('code', {}, `${base}/api/agent/v1/…`), ' (mêmes routes que ', h('code', {}, '/api/studio'), '), avec l’en-tête ', h('code', {}, 'Authorization: Bearer lsk_…'), '.'),
+        form,
+        fresh ? h('div', { class: 'panel' },
+          h('p', { class: 'status ok' }, `Clé « ${fresh.name} » créée. Copie-la maintenant : elle ne sera plus affichée.`),
+          h('p', {}, h('code', {}, fresh.key), ' ', h('button', { class: 'btn secondary small', type: 'button', onclick: () => navigator.clipboard?.writeText(fresh.key).then(() => status(note, 'Clé copiée.', 'ok')) }, 'Copier')),
+          h('p', { class: 'status' }, 'À transmettre à l’agent avec la clé : le guide docs/agent-guide.md du dépôt et l’adresse du serveur MCP ', h('code', {}, `${base}/api/agent/mcp`), '.'),
+          h('p', { class: 'status' }, 'ChatGPT (pas d’en-tête possible) : adresse secrète, à garder comme la clé : ', h('code', {}, `${base}/api/agent/mcp/${fresh.key}`)),
+          h('p', { class: 'status' }, 'Configuration MCP (Claude Code, Claude Desktop, Cursor…) :'),
+          h('pre', {}, mcpConfig)) : null),
+      note,
+      h('section', { class: 'panel' },
+        h('h3', {}, `Clés (${keys.filter((k) => !k.revoked_at).length} active${keys.filter((k) => !k.revoked_at).length > 1 ? 's' : ''})`),
+        keys.length
+          ? h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Nom'), h('th', {}, 'Début de la clé'), h('th', {}, 'Créée'), h('th', {}, 'Dernier usage'), h('th', {}, 'Appels'), h('th', {}, ''))),
+            h('tbody', {}, keys.map((k) => h('tr', { class: k.revoked_at ? 'wall-hidden' : '' },
+              h('td', {}, k.name, k.revoked_at ? h('span', { class: 'badge' }, 'Révoquée') : null),
+              h('td', {}, h('code', {}, `${k.hint}…`)),
+              h('td', {}, when(k.created_at)),
+              h('td', {}, when(k.last_used_at)),
+              h('td', { class: 'num' }, Number(k.uses).toLocaleString('fr-FR')),
+              h('td', {}, k.revoked_at ? null : h('button', { class: 'btn secondary small', type: 'button', onclick: revoke(k) }, 'Révoquer'))))))
+          : h('p', { class: 'status' }, 'Aucune clé pour le moment.')),
+    );
   }
   draw();
   $app.replaceChildren(root);

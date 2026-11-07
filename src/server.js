@@ -6,15 +6,16 @@ import { initDb } from './db.js';
 import { ffmpegAvailable, storageDir } from './media.js';
 import { requireMember } from './members/session.js';
 import { adminRouter } from './routes/admin.js';
+import { agentRouter } from './routes/agent.js';
 import { libraryRouter } from './routes/library.js';
 import { membersRouter } from './routes/members.js';
 import { publicRouter } from './routes/public.js';
 import { studioRouter } from './routes/studio.js';
-import { veilleRouter } from './routes/veille.js';
-import { startVeilleScheduler } from './veille/veille.js';
+import { wallRouter } from './routes/wall.js';
 import { startStudioCleanup, studioCapabilities } from './studio/render.js';
 import { startSummaryScheduler } from './auto-summaries.js';
 import { startScheduler } from './sync.js';
+import { startWallScheduler } from './wall/wall.js';
 import { startLibraryMaintenance } from './library/library.js';
 import { startVideoFetcher } from './video-fetch.js';
 import { startVideoFilesCheck } from './video-files-check.js';
@@ -58,7 +59,8 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/auth', membersRouter);
   app.use('/api/studio', requireMember, studioRouter);
-  app.use('/api/veille', veilleRouter);
+  app.use('/api/agent', agentRouter); // agents IA : clé API, pas de compte adhérent
+  app.use('/api/wall', wallRouter);
   app.use('/api/library', libraryRouter);
   app.use('/api', publicRouter);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Route inconnue.' }));
@@ -100,7 +102,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   startScheduler();
   startSummaryScheduler();
   startStudioCleanup();
-  startVeilleScheduler();
+  startWallScheduler();
   startLibraryMaintenance();
   startVideoFetcher();
   startVideoFilesCheck();
