@@ -1,5 +1,5 @@
 /**
- * Mur des clips : les vidéos TikTok publiées avec le hashtag suivi (par défaut #lisnard2027), classées par vues, j'aime et commentaires.
+ * Mur des clips : les vidéos TikTok publiées avec le hashtag suivi (par défaut #projetlisnard), classées par vues, j'aime et commentaires.
  *
  * Les vidéos sont récupérées avec l'acteur Apify « clockworks/tiktok-scraper » (voir apify.js), puis enregistrées dans `wall_clips`
  * (le mur n'appelle jamais Apify : il lit la base). L'actualisation se fait toutes les WALL_REFRESH_HOURS heures et à la demande dans
@@ -34,7 +34,7 @@ export function wallConfig() {
     token: process.env.APIFY_TOKEN ?? '',
     actor: process.env.APIFY_TIKTOK_ACTOR || 'clockworks/tiktok-scraper',
     baseUrl: process.env.APIFY_BASE_URL || 'https://api.apify.com',
-    hashtag: String(process.env.WALL_HASHTAG ?? 'lisnard2027').replace(/^#/, '').trim().toLowerCase() || 'lisnard2027',
+    hashtag: String(process.env.WALL_HASHTAG ?? 'projetlisnard').replace(/^#/, '').trim().toLowerCase() || 'projetlisnard',
     max: Math.min(60, Math.max(3, Math.trunc(num(process.env.WALL_MAX, 13)))), // taille du classement : les N meilleurs clips
     results: Math.min(1000, Math.max(10, Math.trunc(num(process.env.WALL_RESULTS, 100)))),
     refreshHours: Math.max(0, num(process.env.WALL_REFRESH_HOURS, 24)), // 0 : seulement à la demande
@@ -146,6 +146,9 @@ const present = (r, rank) => ({
 });
 
 const VISIBLE = `NOT c.hidden AND NOT EXISTS (SELECT 1 FROM wall_hidden_authors a WHERE a.author = lower(c.author))`;
+// Only clips of the followed hashtag are ranked: clips kept from a former hashtag stay in the database but are not shown
+// (`p` is the SQL placeholder of the hashtag, e.g. '$8')
+const ON_TAG = (p) => `(c.hashtags @> to_jsonb(${p}::text) OR position('#' || ${p}::text in lower(c.text)) > 0)`;
 
 /**
  * Le mur : les `max` (13) meilleurs clips visibles sur la période, d'après le score, puis réordonnés selon `sort` (`score` par défaut) ;
@@ -162,15 +165,15 @@ export async function listWall({ sort = 'score', period = 'all', limit = 24, off
     `WITH best AS (
        SELECT c.*, (c.views * $2::numeric + c.likes * $3::numeric + c.comments * $4::numeric)::bigint AS score
        FROM wall_clips c
-       WHERE ${VISIBLE} AND ($1::int IS NULL OR c.created_at >= now() - make_interval(days => $1::int))
+       WHERE ${VISIBLE} AND ${ON_TAG('$8')} AND ($1::int IS NULL OR c.created_at >= now() - make_interval(days => $1::int))
        ORDER BY score DESC, c.id DESC LIMIT $5
      )
      SELECT * FROM best c ORDER BY ${order}, c.id DESC LIMIT $6 OFFSET $7`,
-    [days, a, b, c, cfg.max, lim, off],
+    [days, a, b, c, cfg.max, lim, off, cfg.hashtag],
   );
   const { rows: total } = await pool.query(
-    `SELECT least(count(*), $2::int)::int AS n FROM wall_clips c WHERE ${VISIBLE} AND ($1::int IS NULL OR c.created_at >= now() - make_interval(days => $1::int))`,
-    [days, cfg.max],
+    `SELECT least(count(*), $2::int)::int AS n FROM wall_clips c WHERE ${VISIBLE} AND ${ON_TAG('$3')} AND ($1::int IS NULL OR c.created_at >= now() - make_interval(days => $1::int))`,
+    [days, cfg.max, cfg.hashtag],
   );
   return { clips: rows.map((r, i) => present(r, off + i + 1)), total: total[0].n, max: cfg.max };
 }

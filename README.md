@@ -446,7 +446,7 @@ Le studio (`/` et `/api/studio/*`) peut être réservé aux adhérents grâce au
 
 ## Le mur des clips
 
-Deuxième section du site, `/mur/` : un mur des meilleurs TikToks publiés avec le hashtag **#lisnard2027** (réglable), dans la charte du site.
+Deuxième section du site, `/mur/` : un mur des meilleurs TikToks publiés avec le hashtag **#projetlisnard** (réglable ; les clips gardés d'un ancien hashtag restent en base mais ne sont plus classés), dans la charte du site.
 
 - **Source** : l'acteur Apify **clockworks/tiktok-scraper** (variable `APIFY_TOKEN`, jeton personnel Apify). Le serveur lance l'exécution
   (`POST /v2/acts/clockworks~tiktok-scraper/runs`, entrée `hashtags` et `resultsPerPage`, sans téléchargement de vidéos), attend la fin, lit le jeu de

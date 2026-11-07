@@ -231,7 +231,7 @@ function show(data) {
   $('explain').textContent = `Le mur présente les ${data.max} meilleurs clips ; les onglets les réordonnent. Chaque clip reçoit un score : ${pts(data.weights.views)} par vue, ${pts(data.weights.likes)} par j’aime et ${pts(data.weights.comments)} par commentaire. Sont repris les clips publiés avec #${data.hashtag}.`;
   if (state.total) $('state').textContent = '';
   else if (data.enabled === false) $('state').textContent = 'Le mur est désactivé pour le moment.';
-  else if (state.period === 'all') $('state').textContent = 'Le mur se remplit : aucun clip pour le moment. Sois le premier : publie ton TikTok avec #lisnard2027 !';
+  else if (state.period === 'all') $('state').textContent = 'Le mur se remplit : aucun clip pour le moment. Sois le premier : publie ton TikTok avec #projetlisnard !';
   else $('state').replaceChildren(`Aucun clip sur ${state.period === '7' ? 'les 7 derniers jours' : 'les 30 derniers jours'}. `, el('button', { class: 'btn small', type: 'button', onclick: () => { state.period = 'all'; sync(); load(); } }, 'Voir depuis le début'));
   render();
 }
