@@ -567,7 +567,7 @@ async function openEditor(youtubeId) {
   }
 
   let suggShown = 6; // extraits proposés affichés d'emblée (les mieux notés d'abord) ; le reste sur demande
-  let easyShown = 10;
+  let easyShown = 5;
 
   /** Niveau débutant : uniquement les extraits proposés par l'IA, en grandes cartes, un seul bouton par carte. */
   function easyExtracts() {
@@ -595,7 +595,7 @@ async function openEditor(youtubeId) {
             el('p', {}, 'L’intelligence artificielle n’a pas trouvé de passage assez fort dans cette interview.'),
             el('p', {}, 'Tu peux choisir une autre interview, ou passer en niveau avancé pour choisir toi-même le passage.'),
             el('button', { class: 'btn secondary', type: 'button', onclick: () => { setLevel('avance'); renderExtracts(); } }, 'Passer en niveau avancé')),
-      S.suggestions.length > easyShown ? el('button', { class: 'btn secondary st-easy-more', type: 'button', onclick: () => { easyShown += 10; renderExtracts(); } }, 'Voir d’autres extraits') : null,
+      S.suggestions.length > easyShown ? el('button', { class: 'btn secondary st-easy-more', type: 'button', onclick: () => { easyShown += 5; renderExtracts(); } }, 'Voir d’autres extraits') : null,
     ];
   }
 
