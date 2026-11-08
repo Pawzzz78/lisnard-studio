@@ -42,21 +42,25 @@ const presentVideo = (v) => ({
   duration_s: v.file_duration_s,
 });
 
-/** Éléments de l'éditeur : styles, polices, musiques et limites. */
+/** Éléments de l'éditeur (styles, polices, musiques, limites), partagés par le studio et l'API des agents. */
+export async function studioAssets() {
+  await ensureMusic();
+  return {
+    presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, hint: p.hint, style: p.style })),
+    default_style: DEFAULT_STYLE,
+    fonts: FONTS.map(({ id, label, category, file, em_ratio, cap_em }) => ({ id, label, category, file, em_ratio, cap_em })),
+    music: publicTracks(),
+    music_categories: PUBLIC_CATEGORIES,
+    limits: { ...LIMITS, suggestionMinS: CLIP_LIMITS.minS, suggestionMaxS: CLIP_LIMITS.maxS },
+    stock: { enabled: stockEnabled(), provider: stockProvider() },
+  };
+}
+
 studioRouter.get(
   '/assets',
   ah(async (_req, res) => {
-    await ensureMusic();
     res.set('Cache-Control', 'public, max-age=60');
-    res.json({
-      presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, hint: p.hint, style: p.style })),
-      default_style: DEFAULT_STYLE,
-      fonts: FONTS.map(({ id, label, category, file, em_ratio, cap_em }) => ({ id, label, category, file, em_ratio, cap_em })),
-      music: publicTracks(),
-      music_categories: PUBLIC_CATEGORIES,
-      limits: { ...LIMITS, suggestionMinS: CLIP_LIMITS.minS, suggestionMaxS: CLIP_LIMITS.maxS },
-      stock: { enabled: stockEnabled(), provider: stockProvider() },
-    });
+    res.json(await studioAssets());
   }),
 );
 
@@ -91,16 +95,18 @@ studioRouter.get(
   }),
 );
 
+export async function listStudioVideos() {
+  const { rows } = await pool.query(
+    `SELECT ${COLS}, COALESCE(jsonb_array_length(c.content->'clips'), 0) + COALESCE(jsonb_array_length(v.play_quotes), 0) AS suggestions
+     FROM videos v LEFT JOIN clip_suggestions c ON c.video_id = v.id
+     WHERE ${CLIPPABLE} ORDER BY v.published_at DESC NULLS LAST, v.id DESC`,
+  );
+  return rows.map((v) => ({ ...presentVideo(v), suggestions: Number(v.suggestions) }));
+}
+
 studioRouter.get(
   '/videos',
-  ah(async (_req, res) => {
-    const { rows } = await pool.query(
-      `SELECT ${COLS}, COALESCE(jsonb_array_length(c.content->'clips'), 0) + COALESCE(jsonb_array_length(v.play_quotes), 0) AS suggestions
-       FROM videos v LEFT JOIN clip_suggestions c ON c.video_id = v.id
-       WHERE ${CLIPPABLE} ORDER BY v.published_at DESC NULLS LAST, v.id DESC`,
-    );
-    res.json({ videos: rows.map((v) => ({ ...presentVideo(v), suggestions: Number(v.suggestions) })) });
-  }),
+  ah(async (_req, res) => res.json({ videos: await listStudioVideos() })),
 );
 
 /** Ce que le studio a besoin de savoir des visages d'une vidéo. */
@@ -112,20 +118,22 @@ async function publicFaces(v) {
 }
 
 /** Une vidéo du studio : extraits proposés et lignes de la transcription (pour ajuster le début et la fin ligne par ligne). */
+export async function videoDetail(youtubeId) {
+  const v = await loadVideo(youtubeId);
+  const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [v.id]);
+  const lines = prepareSegments(rows).map((s) => [s.start_ms, s.end_ms, s.text]);
+  const sg = await withPlayQuotes(v.id, await getClipSuggestions(v.id));
+  return {
+    video: { ...presentVideo(v), width: v.file_width, height: v.file_height, has_audio: v.file_has_audio },
+    suggestions: (sg?.clips ?? []).map(({ start_ms, end_ms, duration_s, title, why, score, text, description }) => ({ start_ms, end_ms, duration_s, title, why, score, text, description: description ?? null })),
+    lines,
+    faces: await publicFaces(v), // cadrage automatique possible ; reconnaissance de la personne de référence disponible
+  };
+}
+
 studioRouter.get(
   '/videos/:youtubeId',
-  ah(async (req, res) => {
-    const v = await loadVideo(req.params.youtubeId);
-    const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [v.id]);
-    const lines = prepareSegments(rows).map((s) => [s.start_ms, s.end_ms, s.text]);
-    const sg = await withPlayQuotes(v.id, await getClipSuggestions(v.id));
-    res.json({
-      video: { ...presentVideo(v), width: v.file_width, height: v.file_height, has_audio: v.file_has_audio },
-      suggestions: (sg?.clips ?? []).map(({ start_ms, end_ms, duration_s, title, why, score, text, description }) => ({ start_ms, end_ms, duration_s, title, why, score, text, description: description ?? null })),
-      lines,
-      faces: await publicFaces(v), // cadrage automatique possible ; reconnaissance de la personne de référence disponible
-    });
-  }),
+  ah(async (req, res) => res.json(await videoDetail(req.params.youtubeId))),
 );
 
 /** Lignes de la transcription ({ start_ms, end_ms, text }) d'une vidéo. */
@@ -212,21 +220,27 @@ studioRouter.get(
   }),
 );
 
+/** Met un clip en file : `body` a la même forme que le POST /render du studio. */
+export async function startRender(body, { ip, owner = null }) {
+  const v = await loadVideo(body?.youtube_id);
+  await ensureMusic();
+  const request = normalizeRequest(body, v);
+  request.framing = await framingForRequest(v, request);
+  const job = await enqueueRender({ video: v, req: request, lines: await linesOf(v.id), ip, owner });
+  await recordEvent('render', { jobId: job.id, youtubeId: v.youtube_id, ip });
+  return job;
+}
+
 studioRouter.post(
   '/render',
   ah(async (req, res) => {
-    const v = await loadVideo(req.body?.youtube_id);
-    await ensureMusic();
-    const request = normalizeRequest(req.body, v);
-    request.framing = await framingForRequest(v, request);
-    const owner = libraryConfigured() ? ensureOwner(req, res) : null;
-    const job = await enqueueRender({ video: v, req: request, lines: await linesOf(v.id), ip: req.ip, owner: owner?.key ?? null });
-    await recordEvent('render', { jobId: job.id, youtubeId: v.youtube_id, ip: req.ip });
-    res.status(202).json(publicJob(job));
+    // Agents' clips are not filed in the visitor library
+    const owner = libraryConfigured() && !req.agent ? ensureOwner(req, res) : null;
+    res.status(202).json(publicJob(await startRender(req.body, { ip: req.ip, owner: owner?.key ?? null })));
   }),
 );
 
-const jobOr404 = (id) => {
+export const jobOr404 = (id) => {
   const job = getJob(String(id));
   if (!job) throw new HttpError(404, 'Clip introuvable ou expiré (les clips sont conservés une heure).');
   return job;

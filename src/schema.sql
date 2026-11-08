@@ -264,3 +264,15 @@ CREATE TABLE IF NOT EXISTS video_voice (
   silences   JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Clés API des agents IA (API privée /api/agent et serveur MCP) : empreinte SHA-256 seulement, révocables depuis l'admin.
+CREATE TABLE IF NOT EXISTS agent_keys (
+  id           SERIAL PRIMARY KEY,
+  name         TEXT NOT NULL,
+  hint         TEXT NOT NULL,
+  hash         TEXT NOT NULL UNIQUE,
+  uses         BIGINT NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at   TIMESTAMPTZ
+);
