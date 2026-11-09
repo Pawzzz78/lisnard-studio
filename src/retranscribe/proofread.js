@@ -7,8 +7,8 @@ export const PROOFREAD_MODEL = 'anthropic/claude-haiku-5.5';
 const BATCH = 80;
 
 // Pure hesitations: removed everywhere. "bah"/"ben" only as an interjection (start of line or before a comma)
-const FILLER = /^(e+u+h+|h+e+u+h*|u+h+m*|h+u+m+|h*m+h+|m{2,}|h+m+|e+h+)$/i;
-const FILLER_RE = /(^|[\s(«"'])(?:e+u+h+|h+e+u+h*|u+h+m*|h+u+m+|h*m+h+|m{2,}|h+m+|e+h+)(?:\s*[,.…]+(?=\s|$))?(?=$|[\s,;:!?)»"'])/giu;
+const FILLER = /^(e+u+h+|h+e+u+h*|u+h+m*|h+u+m+|h*m+h+|m{2,}|h+m+)$/i;
+const FILLER_RE = /(^|[\s(«"'])(?:e+u+h+|h+e+u+h*|u+h+m*|h+u+m+|h*m+h+|m{2,}|h+m+)(?:\s*[,.…]+(?=\s|$))?(?=$|[\s,;:!?)»"'])/giu;
 const INTERJECTION_RE = /(^|[.!?…]\s+|,\s*)(?:bah|ben|beh)\s*,\s*/giu;
 // Legitimate doubled words in French ("nous nous sommes", "vous vous")
 const DOUBLE_OK = new Set(['nous', 'vous', 'que', 'si']);
@@ -17,6 +17,10 @@ const DOUBLE_OK = new Set(['nous', 'vous', 'que', 'si']);
 export function stripFillers(text) {
   let s = String(text ?? '');
   s = s.replace(FILLER_RE, '$1').replace(/^[\s,;:]+/, '').replace(INTERJECTION_RE, '$1');
+  // "Ah bah, …" keeps the "ah"; "Bah moi, …" at the start of a sentence loses the "bah", comma or not
+  s = s.replace(/(^|\s)(ah)\s+bah(?![\p{L}])/giu, '$1$2').replace(/(^|[.!?…]\s+)bah(?![\p{L}]),?\s*/giu, '$1');
+  // "c'est, c'est, c'est insupportable" -> "c'est insupportable" ("nous, nous" is emphasis: kept)
+  s = s.replace(/(^|\s)([\p{L}'’-]+)(?:,\s*\2(?![\p{L}'’-]))+/giu, (m, pre, w) => (DOUBLE_OK.has(w.toLowerCase()) ? m : `${pre}${w}`));
   // "le le", "je je je" -> one word (case-insensitive, punctuation-free repeats only)
   s = s.replace(/(^|\s)([\p{L}'’-]+)(?:\s+\2)+(?=[\s,.;:!?…]|$)/giu, (m, pre, w) => (DOUBLE_OK.has(w.toLowerCase()) ? m : `${pre}${w}`));
   s = s
@@ -28,7 +32,9 @@ export function stripFillers(text) {
   return s; // never recase: a line is often the middle of a sentence
 }
 
-const words = (t) => normalize(t).split(' ').filter((w) => w && !FILLER.test(w));
+// Spelled-out numbers count as the same word as their digits ("30" = "trente")
+const NUMBERS = { zero: '0', un: '1', une: '1', deux: '2', trois: '3', quatre: '4', cinq: '5', six: '6', sept: '7', huit: '8', neuf: '9', dix: '10', onze: '11', douze: '12', treize: '13', quatorze: '14', quinze: '15', seize: '16', vingt: '20', trente: '30', quarante: '40', cinquante: '50', soixante: '60', cent: '100', mille: '1000' };
+const words = (t) => normalize(t).split(' ').filter((w) => w && !FILLER.test(w)).map((w) => NUMBERS[w] ?? w);
 
 function lev(a, b) {
   if (a === b) return 0;
@@ -53,7 +59,8 @@ export function faithful(orig, fixed) {
   const a = words(stripFillers(orig));
   const b = words(fixed);
   if (a.length !== b.length) return false;
-  const near = (x, y) => lev(x, y) <= Math.max(1, Math.floor(Math.max(x.length, y.length) / 3));
+  // A number never changes: "30" -> "40" is a different statement, not a spelling fix
+  const near = (x, y) => !/\d/.test(x + y) && lev(x, y) <= Math.max(1, Math.floor(Math.max(x.length, y.length) / 3));
   return a.every((w, i) => w === b[i] || near(w, b[i]));
 }
 

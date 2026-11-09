@@ -37,6 +37,25 @@ test('hésitations : « euh », « mmh », « bah, » et bégaiements retirés ;
   assert.equal(stripFillers('Ce bénévolat heureux'), 'Ce bénévolat heureux');
 });
 
+test('bégaiements avec virgules, « bah » en début de phrase, « ah bah » ; « nous, nous » et « eh bien » gardés', () => {
+  assert.equal(stripFillers('Je, je, je crois que je propose'), 'Je crois que je propose');
+  assert.equal(stripFillers("c'est, c'est, et tout ce que"), "c'est, et tout ce que");
+  assert.equal(stripFillers("Le, le, d'abord, être"), "Le, d'abord, être");
+  assert.equal(stripFillers('Bah je sais pas'), 'je sais pas');
+  assert.equal(stripFillers('Ah bah, de toute façon'), 'Ah, de toute façon');
+  assert.equal(stripFillers('Il a dit bah non.'), 'Il a dit bah non.');
+  assert.equal(stripFillers('Le Bahreïn'), 'Le Bahreïn');
+  assert.equal(stripFillers('Nous, nous pensons'), 'Nous, nous pensons');
+  assert.equal(stripFillers('Eh bien voilà'), 'Eh bien voilà');
+});
+
+test('garde-fou : un nombre et le même nombre en lettres sont le même mot', () => {
+  assert.ok(faithful('on ne reviendra pas au 30 Glorieux', 'on ne reviendra pas aux Trente Glorieuses'));
+  assert.ok(faithful("Et bien à l'époque, l'ERN a condamné", "Eh bien à l'époque, le RN a condamné"));
+  assert.ok(!faithful('il y a 30 ans', 'il y a 40 ans'));
+  assert.ok(!faithful('dans, dans, dans ma ville', 'ma ville'));
+});
+
 test('garde-fou : orthographe et noms propres acceptés ; mot changé, ajouté ou retiré refusé', () => {
   assert.ok(faithful('david lisnar a dit que la france', 'David Lisnard a dit que la France.'));
   assert.ok(faithful('euh je pense que la la France', 'Je pense que la France'));
