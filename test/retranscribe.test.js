@@ -245,3 +245,15 @@ test('coûts : appels cumulés par jour, tâche et modèle ; rapport par tâche 
   assert.ok(rep.totals.today >= 0.03 - 1e-9);
   await U.recordUsage({ feature: 'x'.repeat(100), provider: null });
 });
+
+test('jamais deux retranscriptions de la même vidéo en même temps', { skip: !enabled }, async () => {
+  const id = await makeVideo(`${VID}h`);
+  let release;
+  const slow = () => new Promise((r) => (release = () => r(goodBuild())));
+  const first = R.retranscribeVideo(id, { manual: true, deps: { build: slow, suggest: async () => {} } });
+  await new Promise((r) => setTimeout(r, 50));
+  const second = await R.retranscribeVideo(id, { manual: true, deps: { build: goodBuild } });
+  assert.equal(second.status, 'skipped');
+  release();
+  assert.equal((await first).status, 'done');
+});

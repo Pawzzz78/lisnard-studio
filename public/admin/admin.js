@@ -1254,7 +1254,7 @@ async function retxPanelFill(panel, gen) {
         fail(e, msg);
       }
     }));
-    panel.replaceChildren(
+    panel.replaceChildren(...[
       h('h3', {}, 'Retranscription (Grok + relecture)'),
       h('p', { class: 'status' }, 'Les interviews sont retranscrites à partir du son (Grok STT), puis relues par Claude Haiku : orthographe, ponctuation, noms propres, « euh » retirés, sans jamais reformuler. L’ancienne transcription est sauvegardée et restaurable depuis la page de la vidéo. Les transcriptions corrigées à la main ou traduites ne sont jamais touchées.'),
       !o.configured ? h('p', { class: 'status err' }, 'Indisponible : la clé OpenRouter n’est pas configurée.') : null,
@@ -1266,7 +1266,7 @@ async function retxPanelFill(panel, gen) {
           h('ul', {}, o.failures.map((f) => h('li', {}, h('a', { href: `#/video/${f.id}` }, f.title || f.youtube_id), ` : ${f.retx_status === 'retry' ? 'nouvelle tentative prévue' : 'méthode initiale gardée'} (${f.retx_error ?? 'erreur inconnue'})`))))
         : null,
       msg,
-    );
+    ].filter(Boolean));
   }
   await draw();
 }
@@ -1984,13 +1984,13 @@ async function renderEditor(id) {
         } }, 'Restaurer l’ancienne')
       : null;
     const s2 = r.retx_stats;
-    retxBody.replaceChildren(
+    retxBody.replaceChildren(...[
       h('p', { class: 'status' }, `État : ${RETX_LABEL[st] ?? st}${r.retx_at ? ` (${new Date(r.retx_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })})` : ''}.`),
       st === 'done' && s2 ? h('p', { class: 'status' }, `${s2.lines} lignes, ${s2.changed} corrigées par la relecture, ${s2.rejected} corrections refusées par le garde-fou.`) : null,
       r.retx_error && st !== 'done' ? h('p', { class: 'status err' }, r.retx_error) : null,
       blocked ? h('p', { class: 'status' }, blocked) : null,
       h('div', { class: 'actions' }, run, restore),
-    );
+    ].filter(Boolean));
     if (st === 'running') {
       retxTimer = setTimeout(async () => {
         const before = st;

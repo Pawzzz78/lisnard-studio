@@ -100,7 +100,9 @@ export async function retranscribeVideo(id, { manual = false, deps = {} } = {}) 
   if (v.translated) return { status: 'skipped', error: 'Transcription traduite : on n’y touche pas.' };
   if (!v.file_name || !v.file_has_audio) return { status: 'skipped', error: 'Pas de fichier vidéo avec du son.' };
   const attempts = manual ? 0 : (v.retx_attempts ?? 0);
-  await pool.query('UPDATE videos SET retx_status = $2, retx_at = now() WHERE id = $1', [id, 'running']);
+  // Atomic claim: the admin button and the scheduler never run the same video twice at once
+  const { rowCount } = await pool.query(`UPDATE videos SET retx_status = 'running', retx_at = now() WHERE id = $1 AND retx_status IS DISTINCT FROM 'running'`, [id]);
+  if (!rowCount) return { status: 'skipped', error: 'Retranscription déjà en cours pour cette vidéo.' };
   try {
     const built = await (deps.build ?? buildTranscript)(v, deps);
     const written = await withTransaction(async (c) => {

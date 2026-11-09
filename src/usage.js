@@ -50,8 +50,10 @@ export const fromOpenRouter = (usage = {}) => ({
 const isoDay = (d) => d.toISOString().slice(0, 10);
 
 /** Résumé pour l'admin : totaux par période, détail tâche × modèle sur [from, to], et coût par jour sur 30 jours. */
-export async function usageReport({ from, to, now = new Date() } = {}) {
-  const today = isoDay(now);
+export async function usageReport({ from, to } = {}) {
+  // The database's date, not Node's: rows are dated with CURRENT_DATE
+  const { rows: [d] } = await pool.query(`SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS today`);
+  const today = d.today;
   const valid = (s) => (/^\d{4}-\d{2}-\d{2}$/.test(String(s ?? '')) ? s : null);
   const monthStart = `${today.slice(0, 7)}-01`;
   const range = { from: valid(from) ?? monthStart, to: valid(to) ?? today };
