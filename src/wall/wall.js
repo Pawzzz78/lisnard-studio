@@ -19,6 +19,7 @@ import { storageDir } from '../media.js';
 import { DownloadError, safeDownload } from '../safe-download.js';
 import { getSetting, setSetting } from '../settings.js';
 import { runActor } from './apify.js';
+import { recordUsage } from '../usage.js';
 
 const run = promisify(execFile);
 
@@ -336,6 +337,7 @@ async function doRefresh(cfg, { trigger, startedAt, fetchImpl }) {
         shouldDownloadSlideshowImages: false,
       },
     });
+    await recordUsage({ feature: 'mur', provider: 'apify', model: cfg.actor, cost: Number.isFinite(Number(apifyRun?.usageTotalUsd)) ? Number(apifyRun.usageTotalUsd) : null });
     const { clips, skipped } = normalizeItems(items, cfg.hashtag);
     const added = await saveClips(clips);
     // vignettes : celles qui manquent encore (un échec n'arrête rien : la carte affichera un fond uni)

@@ -268,6 +268,7 @@ async function route() {
     else if (location.hash === '#/mur') await renderWallAdmin();
     else if (location.hash === '#/bibliotheque') await renderLibraryAdmin();
     else if (location.hash === '#/agents') await renderAgentKeys();
+    else if (location.hash === '#/couts') await renderUsage();
     else await renderList();
     if (gen !== routeGen) return;
     const title = $app.querySelector('h2, h1');
@@ -296,6 +297,7 @@ function renderNav() {
     link('#/mur', 'Mur'),
     link('#/bibliotheque', 'Bibliothèque'),
     link('#/agents', 'Agents IA'),
+    link('#/couts', 'Coûts API'),
     h('a', { href: '/' }, 'Voir le site'),
     h(
       'a',
@@ -375,7 +377,7 @@ async function renderList() {
           v.sync_status === 'pending' ? h('span', { class: 'badge' }, 'en attente') : null,
           v.sync_status === 'failed' ? h('span', { class: 'badge warn', title: v.sync_error ?? '' }, 'échec') : null,
           v.segment_count === 0 && !v.sync_status ? h('span', { class: 'badge' }, 'vide') : null,
-          v.edited ? h('span', { class: 'badge ok' }, 'corrigée') : h('span', { class: 'badge' }, { supadata: 'auto', whisper: 'whisper' }[v.source] ?? (v.sync_status ? 'synchro' : 'manuelle')),
+          v.edited ? h('span', { class: 'badge ok' }, 'corrigée') : h('span', { class: 'badge' }, { supadata: 'auto', whisper: 'whisper', grok: 'grok' }[v.source] ?? (v.sync_status ? 'synchro' : 'manuelle')),
         ),
       ),
     );
@@ -1001,6 +1003,68 @@ async function renderWallAdmin() {
   $app.replaceChildren(root);
 }
 
+async function renderUsage() {
+  const gen = routeGen;
+  const usd = (n) => `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 0.01 ? 4 : 2 })} $`;
+  const int = (n) => Number(n).toLocaleString('fr-FR');
+  const root = h('div');
+  const from = h('input', { type: 'date', 'aria-label': 'Du' });
+  const to = h('input', { type: 'date', 'aria-label': 'Au' });
+  async function load() {
+    const q = new URLSearchParams();
+    if (from.value) q.set('from', from.value);
+    if (to.value) q.set('to', to.value);
+    const data = await api('GET', `/usage?${q}`);
+    if (gen !== routeGen) return;
+    from.value = data.range.from;
+    to.value = data.range.to;
+    const t = data.totals;
+    const maxDay = Math.max(0.0001, ...data.days.map((d) => d.cost_usd));
+    root.replaceChildren(
+      h('section', { class: 'panel' },
+        h('h2', {}, 'Coûts API'),
+        h('p', { class: 'status' }, 'Montants réels facturés, relevés à chaque appel (OpenRouter, Apify). Supadata (crédits) et les banques d’images (gratuites) sont comptés en appels, sans montant.'),
+        h('table', { class: 'videos' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Aujourd’hui'), h('th', {}, '7 derniers jours'), h('th', {}, 'Ce mois-ci'), h('th', {}, 'Mois dernier'))),
+          h('tbody', {}, h('tr', {}, [t.today, t.last7, t.month, t.prev_month].map((v) => h('td', { class: 'num' }, usd(v))))))),
+      h('section', { class: 'panel' },
+        h('h3', {}, 'Détail par tâche et par modèle'),
+        h('form', { class: 'actions', onsubmit: (ev) => { ev.preventDefault(); load().catch((e) => (e instanceof AuthError ? renderLogin() : null)); } },
+          h('label', {}, 'Du ', from), h('label', {}, ' au ', to), h('button', { class: 'btn secondary small', type: 'submit' }, 'Afficher')),
+        data.rows.length
+          ? h('div', { class: 'wall-table-wrap' }, h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, ['Tâche', 'Fournisseur', 'Modèle', 'Appels', 'Erreurs', 'Tokens entrée', 'Tokens sortie', 'Audio', 'Coût', 'Part', 'Par appel'].map((c) => h('th', {}, c)))),
+            h('tbody', {}, data.rows.map((r) => h('tr', {},
+              h('td', {}, r.label),
+              h('td', {}, r.provider),
+              h('td', {}, h('code', {}, r.model || '—')),
+              h('td', { class: 'num' }, int(r.calls)),
+              h('td', { class: 'num' }, r.errors ? int(r.errors) : '—'),
+              h('td', { class: 'num' }, r.input_tokens ? int(r.input_tokens) : '—'),
+              h('td', { class: 'num' }, r.output_tokens ? int(r.output_tokens) : '—'),
+              h('td', { class: 'num' }, r.audio_seconds ? `${int(Math.round(r.audio_seconds / 60))} min` : '—'),
+              h('td', { class: 'num' }, r.priced_calls ? usd(r.cost_usd) : 'sans montant'),
+              h('td', { class: 'num' }, r.priced_calls ? `${Math.round(r.share * 100)} %` : '—'),
+              h('td', { class: 'num' }, r.priced_calls ? usd(r.cost_usd / r.priced_calls) : '—')))),
+            h('tfoot', {}, h('tr', {}, h('td', { colspan: 8 }, 'Total de la période'), h('td', { class: 'num' }, usd(data.total)), h('td', { colspan: 2 }, '')))))
+          : h('p', { class: 'status' }, 'Aucun appel sur cette période.')),
+      h('section', { class: 'panel' },
+        h('h3', {}, '30 derniers jours'),
+        data.days.length
+          ? h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Jour'), h('th', {}, 'Appels'), h('th', {}, 'Coût'), h('th', {}, ''))),
+            h('tbody', {}, data.days.slice().reverse().map((d) => h('tr', {},
+              h('td', {}, new Date(`${d.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })),
+              h('td', { class: 'num' }, int(d.calls)),
+              h('td', { class: 'num' }, usd(d.cost_usd)),
+              h('td', {}, h('span', { class: 'usage-bar', style: `width:${Math.round((d.cost_usd / maxDay) * 100)}%` }))))))
+          : h('p', { class: 'status' }, 'Pas encore de données.')),
+    );
+  }
+  await load();
+  $app.replaceChildren(root);
+}
+
 async function renderAgentKeys() {
   const gen = routeGen;
   let { keys } = await api('GET', '/agent-keys');
@@ -1154,6 +1218,57 @@ async function renderLibraryAdmin() {
   }
   draw();
   $app.replaceChildren(root);
+}
+
+/** Panneau « Retranscription (Grok + relecture) » de la page Synchronisation. */
+async function retxPanelFill(panel, gen) {
+  const msg = h('p', { class: 'status', role: 'status' });
+  const usd = (n) => `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+  const hours = (sec) => `${(sec / 3600).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} h`;
+  async function draw() {
+    let o;
+    try {
+      o = await api('GET', '/retranscribe/overview');
+    } catch (e) {
+      if (e instanceof AuthError) return renderLogin();
+      return panel.replaceChildren(h('h3', {}, 'Retranscription (Grok + relecture)'), h('p', { class: 'status err' }, e.message));
+    }
+    if (gen !== routeGen) return;
+    const cap = h('input', { type: 'number', min: 0, max: 200, step: 1, value: o.settings.dailyHours, style: 'width:5rem', 'aria-label': 'Heures d’audio par jour' });
+    const save = h('button', { class: 'btn secondary small', type: 'button' }, 'Enregistrer');
+    save.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      try {
+        await api('PUT', '/retranscribe/settings', { dailyHours: Number(cap.value) });
+        status(msg, 'Plafond enregistré.', 'ok');
+        await draw();
+      } catch (e) {
+        fail(e, msg);
+      }
+    }));
+    const pause = h('button', { class: 'btn secondary small', type: 'button' }, o.settings.paused ? 'Reprendre' : 'Mettre en pause');
+    pause.addEventListener('click', (ev) => busy(ev.currentTarget, async () => {
+      try {
+        await api('PUT', '/retranscribe/settings', { paused: !o.settings.paused });
+        await draw();
+      } catch (e) {
+        fail(e, msg);
+      }
+    }));
+    panel.replaceChildren(
+      h('h3', {}, 'Retranscription (Grok + relecture)'),
+      h('p', { class: 'status' }, 'Les interviews sont retranscrites à partir du son (Grok STT), puis relues par Claude Haiku : orthographe, ponctuation, noms propres, « euh » retirés, sans jamais reformuler. L’ancienne transcription est sauvegardée et restaurable depuis la page de la vidéo. Les transcriptions corrigées à la main ou traduites ne sont jamais touchées.'),
+      !o.configured ? h('p', { class: 'status err' }, 'Indisponible : la clé OpenRouter n’est pas configurée.') : null,
+      h('p', { class: 'status' }, `${o.done} faite${o.done > 1 ? 's' : ''} · ${o.todo} à faire (${hours(o.todo_seconds)} d’audio) · ${o.initial} en méthode initiale après échec${o.running ? ' · 1 en cours' : ''}${o.settings.paused ? ' · EN PAUSE' : ''}.`),
+      h('p', { class: 'status' }, `Aujourd’hui : ${hours(o.seconds_today)} sur ${o.settings.dailyHours} h autorisées, ${usd(o.cost.today)}. Depuis le début : ${usd(o.cost.total)}.`),
+      h('div', { class: 'actions' }, h('label', {}, 'Plafond : ', cap, ' h d’audio par jour '), save, pause),
+      o.failures.length
+        ? h('details', {}, h('summary', {}, `Échecs récents (${o.failures.length})`),
+          h('ul', {}, o.failures.map((f) => h('li', {}, h('a', { href: `#/video/${f.id}` }, f.title || f.youtube_id), ` : ${f.retx_status === 'retry' ? 'nouvelle tentative prévue' : 'méthode initiale gardée'} (${f.retx_error ?? 'erreur inconnue'})`))))
+        : null,
+      msg,
+    );
+  }
+  await draw();
 }
 
 async function renderSync() {
@@ -1471,7 +1586,9 @@ async function renderSync() {
       : null,
   );
 
-  $app.replaceChildren(...[state, summariesPanel, filesPanel, channels, failed].filter(Boolean));
+  const retxPanel = h('section', { class: 'panel' });
+  retxPanelFill(retxPanel, gen);
+  $app.replaceChildren(...[state, summariesPanel, filesPanel, retxPanel, channels, failed].filter(Boolean));
   cleanup(); // a re-render (timer, action) replaces the previous timer instead of adding one
 
   const sigOf = (x) =>
@@ -1817,6 +1934,72 @@ async function renderEditor(id) {
       findMsg,
     ),
   );
+
+  // --- retranscription à partir du son (Grok + relecture)
+  const retxMsg = h('p', { class: 'status', role: 'status' });
+  const retxBody = h('div');
+  const retxPanel = h('section', { class: 'panel' }, h('h3', {}, 'Retranscription (Grok + relecture)'), retxBody, retxMsg);
+  const RETX_LABEL = { todo: 'à faire', running: 'en cours…', retry: 'échec, nouvelle tentative prévue', done: 'faite', initial: 'échec : méthode initiale gardée', restored: 'ancienne transcription restaurée' };
+  let retxTimer = 0;
+  const prevRetxCleanup = cleanup;
+  cleanup = () => {
+    prevRetxCleanup();
+    clearTimeout(retxTimer);
+  };
+  async function drawRetx() {
+    clearTimeout(retxTimer);
+    let r;
+    try {
+      r = await api('GET', `/retranscribe/videos/${id}`);
+    } catch (err) {
+      return fail(err, retxMsg);
+    }
+    const st = r.source === 'grok' && r.retx_status !== 'running' ? 'done' : (r.retx_status ?? 'todo');
+    const blocked = r.edited ? 'Transcription corrigée à la main : elle n’est jamais retranscrite.' : r.translated ? 'Transcription traduite : elle n’est pas retranscrite.' : !r.has_audio ? 'Pas de fichier vidéo avec du son.' : null;
+    const run = h('button', { class: 'btn secondary small', type: 'button', disabled: Boolean(blocked) || st === 'running' }, st === 'done' ? 'Retranscrire à nouveau' : 'Retranscrire maintenant');
+    run.addEventListener('click', (ev) => {
+      if (dirty && !confirm('Tes modifications non enregistrées seront perdues. Continuer ?')) return;
+      busy(ev.currentTarget, async () => {
+        try {
+          await api('POST', `/retranscribe/videos/${id}/run`, {});
+          status(retxMsg, 'Retranscription lancée : quelques minutes pour une interview d’une heure.', 'ok');
+          retxTimer = setTimeout(drawRetx, 4000);
+        } catch (err) {
+          fail(err, retxMsg);
+        }
+      });
+    });
+    const restore = r.has_backup
+      ? h('button', { class: 'btn secondary small', type: 'button', onclick: (ev) => {
+          if (!confirm('Remettre la transcription d’avant la retranscription ?')) return;
+          busy(ev.currentTarget, async () => {
+            try {
+              await api('POST', `/retranscribe/videos/${id}/restore`, {});
+              dirty = false;
+              route();
+            } catch (err) {
+              fail(err, retxMsg);
+            }
+          });
+        } }, 'Restaurer l’ancienne')
+      : null;
+    const s2 = r.retx_stats;
+    retxBody.replaceChildren(
+      h('p', { class: 'status' }, `État : ${RETX_LABEL[st] ?? st}${r.retx_at ? ` (${new Date(r.retx_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })})` : ''}.`),
+      st === 'done' && s2 ? h('p', { class: 'status' }, `${s2.lines} lignes, ${s2.changed} corrigées par la relecture, ${s2.rejected} corrections refusées par le garde-fou.`) : null,
+      r.retx_error && st !== 'done' ? h('p', { class: 'status err' }, r.retx_error) : null,
+      blocked ? h('p', { class: 'status' }, blocked) : null,
+      h('div', { class: 'actions' }, run, restore),
+    );
+    if (st === 'running') {
+      retxTimer = setTimeout(async () => {
+        const before = st;
+        await drawRetx();
+        if (before === 'running' && retxBody.textContent.includes('faite')) route();
+      }, 5000);
+    }
+  }
+  drawRetx();
 
   // --- source de la transcription
   const srcMsg = h('p', { class: 'status', role: 'status' });
@@ -2409,7 +2592,7 @@ async function renderEditor(id) {
   $app.replaceChildren(
     h('p', {}, h('a', { href: '#/' }, '← Toutes les vidéos')),
     info,
-    h('div', { class: 'editor' }, h('aside', { class: 'side' }, playerBox, summaryPanel, clipsPanel, whisperPanel, translatePanel, tools, source, danger), list),
+    h('div', { class: 'editor' }, h('aside', { class: 'side' }, playerBox, summaryPanel, clipsPanel, whisperPanel, retxPanel, translatePanel, tools, source, danger), list),
     savebar,
   );
 

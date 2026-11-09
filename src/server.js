@@ -20,6 +20,7 @@ import { startLibraryMaintenance } from './library/library.js';
 import { startVideoFetcher } from './video-fetch.js';
 import { startVideoFilesCheck } from './video-files-check.js';
 import { startPlayImport } from './play.js';
+import { startRetranscribeScheduler } from './retranscribe/retranscribe.js';
 import { startTrendingScheduler } from './studio/trending.js';
 
 // Origins the pages really use: YouTube (admin player, thumbnails), TikTok (wall), Pixabay/Pexels (stock thumbnails); blob: and data: for the end card photo and the account logo kept in the browser.
@@ -107,5 +108,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   startVideoFetcher();
   startVideoFilesCheck();
   startPlayImport();
+  startRetranscribeScheduler();
   startTrendingScheduler();
 }

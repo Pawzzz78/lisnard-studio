@@ -17,6 +17,7 @@ import { createBudget } from '../budget.js';
 import { HttpError } from '../http-error.js';
 import { storageDir } from '../media.js';
 import { DownloadError, safeDownload } from '../safe-download.js';
+import { recordUsage } from '../usage.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const TTL_MS = 10 * 60 * 1000;
@@ -55,6 +56,7 @@ async function getJson(url, headers, fetchImpl, name) {
   } catch {
     throw new HttpError(502, `${name} ne répond pas pour le moment : réessaie dans un instant.`);
   }
+  await recordUsage({ feature: 'images', provider: name.toLowerCase(), model: 'recherche', error: !res.ok });
   if (!res.ok) throw httpFailure(res, name);
   return res.json().catch(() => {
     throw new HttpError(502, `Réponse illisible de ${name}.`);

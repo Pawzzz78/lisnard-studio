@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS videos (
   published_at  DATE,
   thumbnail_url TEXT,
   lang          TEXT,
-  source        TEXT NOT NULL DEFAULT 'manual',   -- 'supadata' | 'manual'
+  source        TEXT NOT NULL DEFAULT 'manual',   -- 'supadata' | 'manual' | 'whisper' | 'grok'
   edited        BOOLEAN NOT NULL DEFAULT FALSE,   -- transcription corrigée à la main
   norm_text     TEXT NOT NULL DEFAULT '',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -276,3 +276,40 @@ CREATE TABLE IF NOT EXISTS agent_keys (
   last_used_at TIMESTAMPTZ,
   revoked_at   TIMESTAMPTZ
 );
+
+-- Coûts des API payantes, par jour, tâche, fournisseur et modèle (coût réel donné par OpenRouter / Apify ; 0 si inconnu)
+CREATE TABLE IF NOT EXISTS api_usage (
+  day           DATE NOT NULL,
+  feature       TEXT NOT NULL,
+  provider      TEXT NOT NULL,
+  model         TEXT NOT NULL DEFAULT '',
+  calls         INTEGER NOT NULL DEFAULT 0,
+  errors        INTEGER NOT NULL DEFAULT 0,
+  input_tokens  BIGINT NOT NULL DEFAULT 0,
+  output_tokens BIGINT NOT NULL DEFAULT 0,
+  audio_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+  cost_usd      DOUBLE PRECISION NOT NULL DEFAULT 0,
+  priced_calls  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, feature, provider, model)
+);
+
+-- Retranscription à partir du son (Grok STT + relecture Haiku) : état par vidéo, et sauvegarde du texte remplacé
+-- retx_status : NULL/'todo' à faire | 'running' | 'retry' (une nouvelle tentative prévue) | 'done' | 'initial' (méthode initiale gardée) | 'restored'
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_status   TEXT;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_next_at  TIMESTAMPTZ;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_error    TEXT;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_at       TIMESTAMPTZ;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS retx_stats    JSONB;
+CREATE TABLE IF NOT EXISTS transcript_backups (
+  id            SERIAL PRIMARY KEY,
+  video_id      INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  source        TEXT,
+  edited        BOOLEAN NOT NULL DEFAULT FALSE,
+  translated    BOOLEAN NOT NULL DEFAULT FALSE,
+  original_lang TEXT,
+  text_hash     TEXT,
+  segments      JSONB NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS transcript_backups_video_idx ON transcript_backups (video_id, id DESC);

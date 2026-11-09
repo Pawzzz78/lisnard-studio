@@ -20,6 +20,8 @@ import { musicAdminRouter } from './music-admin.js';
 import { cancelAnalysis } from '../studio/faces.js';
 import { studioStats } from '../studio/stats.js';
 import { syncRouter } from './sync-admin.js';
+import { usageReport } from '../usage.js';
+import { retranscribeAdminRouter } from './retranscribe-admin.js';
 import { createKey, listKeys, revokeKey } from '../agent/keys.js';
 import { YouTubeApiError } from '../youtube.js';
 import { fetchLocalized } from '../localize.js';
@@ -66,6 +68,10 @@ adminRouter.get('/config', (_req, res) =>
 );
 
 adminRouter.use('/sync', syncRouter);
+adminRouter.use('/retranscribe', retranscribeAdminRouter); // retranscription à partir du son
+
+// Coûts des API, par tâche et par modèle
+adminRouter.get('/usage', ah(async (req, res) => res.json(await usageReport({ from: req.query.from, to: req.query.to }))));
 
 // Clés API des agents IA
 adminRouter.get('/agent-keys', ah(async (_req, res) => res.json({ keys: await listKeys() })));

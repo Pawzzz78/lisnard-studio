@@ -192,3 +192,6 @@ input[type="file"]::file-selector-button {
   background: var(--color-primary); color: var(--color-primary-contrast); cursor: pointer; transition: background .15s;
 }
 input[type="file"]:hover::file-selector-button { background: var(--color-primary-dark); }
+
+/* Coûts API : barre du coût par jour */
+.usage-bar { display: block; height: .55rem; min-width: 2px; border-radius: 3px; background: var(--color-primary); }
