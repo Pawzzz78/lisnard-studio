@@ -29,11 +29,11 @@ test('lignes : coupées en fin de phrase, sur une pause ou si trop longues ; hor
   assert.deepEqual(segmentsToLines([{ start: 1, end: 3, text: ' Salut  toi ' }, { start: 4, text: '' }], 1000), [{ start_ms: 2000, duration_ms: 2000, text: 'Salut toi' }]);
 });
 
-test('hésitations : « euh », « mmh », « bah, » et bégaiements retirés ; « nous nous » gardé', () => {
-  assert.equal(stripFillers('euh je pense que, euh, la la France'), 'Je pense que, la France');
-  assert.equal(stripFillers('Mmh euhhh Ben, voilà.'), 'Voilà.');
+test('hésitations : « euh », « mmh », « bah, » et bégaiements retirés ; « nous nous » gardé ; casse jamais changée', () => {
+  assert.equal(stripFillers('euh je pense que, euh, la la France'), 'je pense que, la France');
+  assert.equal(stripFillers('Mmh euhhh Ben, voilà.'), 'voilà.');
   assert.equal(stripFillers('Nous nous sommes trompés'), 'Nous nous sommes trompés');
-  assert.equal(stripFillers('le euh bénévolat'), 'Le bénévolat');
+  assert.equal(stripFillers('le euh bénévolat'), 'le bénévolat');
   assert.equal(stripFillers('Ce bénévolat heureux'), 'Ce bénévolat heureux');
 });
 
@@ -51,14 +51,14 @@ test('relecture : corrections fidèles appliquées, reformulation refusée, rép
   let seen;
   const complete = async (args) => ((seen = args), '```json\n{"fix":[{"i":1,"text":"David Lisnard est maire."},{"i":2,"text":"Il faut augmenter les impôts."}]}\n```');
   const r = await proofreadLines(lines, { complete });
-  assert.deepEqual(r.lines.map((l) => l.text), ['David Lisnard est maire.', 'Il faut baisser les impôts']);
+  assert.deepEqual(r.lines.map((l) => l.text), ['David Lisnard est maire.', 'il faut baisser les impôts']);
   assert.equal(r.changed, 1);
   assert.equal(r.rejected, 1);
   assert.equal(seen.feature, 'retranscription_relecture');
   assert.match(seen.user, /^\[1\] euh david lisnar est maire\n\[2\]/);
   const broken = await proofreadLines(lines, { complete: async () => 'pas du json' });
   assert.equal(broken.failedBatches, 1);
-  assert.deepEqual(broken.lines.map((l) => l.text), ['David lisnar est maire', 'Il faut baisser les impôts']);
+  assert.deepEqual(broken.lines.map((l) => l.text), ['david lisnar est maire', 'il faut baisser les impôts']);
 });
 
 const withKey = async (fn) => {

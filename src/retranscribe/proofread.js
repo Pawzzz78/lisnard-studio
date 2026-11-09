@@ -25,7 +25,7 @@ export function stripFillers(text) {
     .replace(/^[\s,;:]+/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  return s ? s[0].toUpperCase() + s.slice(1) : s;
+  return s; // never recase: a line is often the middle of a sentence
 }
 
 const words = (t) => normalize(t).split(' ').filter((w) => w && !FILLER.test(w));
