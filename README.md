@@ -415,7 +415,8 @@ dès qu'il retombe sur des interventions déjà vues (`PLAY_MAX_PAGES` pages au 
 lecteur YouTube dans le détail de l'intervention) rejoignent la file d'attente comme une vidéo de chaîne suivie : transcription automatique, puis
 téléchargement automatique si `AUTO_DOWNLOAD=on`. Mêmes règles que la synchro : liste d'exclusion respectée, Shorts écartés ; un direct en cours ou une
 vidéo pas encore publique est revérifié à chaque passe pendant 14 jours. Articles de presse et passages sans vidéo YouTube sont ignorés. Admin →
-« Synchronisation » : état de la dernière passe et bouton « Importer maintenant ». `PLAY_ENABLED=off` pour couper. Tests : `test/play.test.js`.
+« Synchronisation » : état de la dernière passe et bouton « Importer maintenant ». `PLAY_ENABLED=off` pour couper.
+À chaque passe, toutes les « Vidéos longues » de Play (`interventions.list` avec `format: 'long'`, sans limite d'âge) sont aussi importées ; leurs citations horodatées (`quotes[].startS`) sont stockées dans `videos.play_quotes` et apparaissent en tête des extraits à clipper (badge « Play »), calées sur la transcription. Tests : `test/play.test.js`.
 
 ## Téléchargement automatique des vidéos
 
