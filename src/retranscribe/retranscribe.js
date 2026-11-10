@@ -20,7 +20,7 @@ export const RETX = {
   retryDelayMin: 30,
   maxAttempts: 2, // first try + one retry, then the initial method
   maxRejectedShare: 0.3, // more proofreading corrections refused than this: something is off, the run fails
-  defaultDailyHours: 10,
+  defaultDailyHours: 2, // low on purpose: check the quality on the first videos, then raise it from the admin
   tickMs: 10 * 60 * 1000,
 };
 const LOCK_ID = 7_420_031;

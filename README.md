@@ -307,7 +307,7 @@ Règles :
 - **Retour en arrière** : l'ancienne transcription est sauvegardée. « Restaurer l'ancienne », sur la page de la vidéo, la remet à l'identique.
 - **Après une retranscription réussie** : les extraits proposés sont refaits sur le nouveau texte.
 - **En cas d'échec** : une seule nouvelle tentative 30 minutes plus tard. Après un second échec, la vidéo garde la **méthode initiale** : sa transcription actuelle ou, si elle n'en a pas, les sous-titres YouTube (Supadata).
-- **Ordre et rythme** : une vidéo à la fois, les plus récentes d'abord. Le plafond est de 10 heures d'audio par jour par défaut, réglable sur la page Synchronisation, où l'on peut aussi mettre en pause.
+- **Ordre et rythme** : une vidéo à la fois, les plus récentes d'abord. Le plafond est de 2 heures d'audio par jour par défaut (volontairement bas : on contrôle la qualité sur les premières vidéos, puis on le relève), réglable sur la page Synchronisation, où l'on peut aussi mettre en pause.
 
 **Coût** : environ 0,10 $ par heure d'audio pour Grok, et quelques centimes de relecture. Rien à configurer : la clé `OPENROUTER_API_KEY` suffit.
 
