@@ -2,6 +2,7 @@
  * Récupération (Supadata) et import manuel (SRT / VTT / texte horodaté) de transcriptions.
  * Un segment = { start_ms, duration_ms, text }.
  */
+import { recordUsage } from './usage.js';
 
 // mode=native : on ne récupère que les sous-titres existants (1 crédit). Le mode par défaut
 // (« auto ») générerait une transcription par IA, bien plus chère, pour les vidéos sans sous-titres.
@@ -36,6 +37,8 @@ export async function fetchTranscript(youtubeId, lang = 'fr') {
   } catch (e) {
     throw new TranscriptError(`Supadata injoignable : ${e.message}`);
   }
+  // Supadata bills in credits: count the call, no dollar amount
+  await recordUsage({ feature: 'transcriptions_youtube', provider: 'supadata', model: 'youtube', error: !res.ok || res.status === 206 });
   const body = await res.json().catch(() => ({}));
   const detail = body.message || body.details || body.error || res.statusText;
   // Supadata répond 206 « transcript-unavailable » (et facture 1 crédit) quand il n'y a pas de sous-titres.

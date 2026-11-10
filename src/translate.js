@@ -72,7 +72,7 @@ async function translateChunk(complete, model, system, texts, indices) {
   let todo = indices;
   for (let attempt = 0; attempt < 3 && todo.length; attempt++) {
     const user = formatLines(todo.map((i) => ({ n: i + 1, text: texts[i] })));
-    const reply = await complete({ model, system, user });
+    const reply = await complete({ model, system, user, feature: 'traduction' });
     for (const [n, text] of parseLines(reply, todo.map((i) => i + 1))) done.set(n - 1, text);
     todo = todo.filter((i) => !done.has(i)); // lignes manquantes : on les redemande seules
   }

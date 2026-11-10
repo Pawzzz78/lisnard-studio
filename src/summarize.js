@@ -169,7 +169,7 @@ export async function summarizeTranscript(segments, { complete = completeWithOpe
   const { text, labels, timed } = buildTranscriptText(segments);
   if (!text) throw new LlmError('Aucune transcription à résumer.', 'config');
   const call = (system, user, maxTokens) =>
-    complete({ model, system, user, maxTokens }, { maxAttempts: 3, timeoutMs: 120_000 });
+    complete({ model, system, user, maxTokens, feature: 'resumes' }, { maxAttempts: 3, timeoutMs: 120_000 });
 
   let raw;
   if (text.length <= MAX_SINGLE_CHARS) {

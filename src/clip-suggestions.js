@@ -261,7 +261,7 @@ export async function suggestClipsFor(rows, { complete = completeWithOpenRouter,
   Object.assign(stats, { proposed: 0, valid: 0, junk: 0 });
   await forEachLimit(windows.length, 3, async (w) => {
     const win = windows[w];
-    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000 }, { maxAttempts: 3, timeoutMs: 120_000 });
+    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000, feature: 'extraits' }, { maxAttempts: 3, timeoutMs: 120_000 });
     for (const c of parseClipJson(raw)) {
       stats.proposed++;
       const clip = buildClip(c, segs, win);

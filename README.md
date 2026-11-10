@@ -294,6 +294,32 @@ Avec une clé API, un agent IA peut créer, personnaliser et télécharger des c
 - Doc pour les devs (clés, sécurité, compatibilité) : [docs/agents-api.md](docs/agents-api.md).
 - Guide à donner à l'agent avec sa clé (installation, outils, erreurs) : [docs/agent-guide.md](docs/agent-guide.md).
 
+## Retranscription à partir du son (Grok + relecture)
+
+Les interviews dont le fichier vidéo est sur le serveur sont retranscrites à partir de leur son, pour remplacer les sous-titres automatiques de YouTube.
+
+1. **Écoute** : l'audio est découpé en morceaux d'au plus 8 minutes, coupés dans les silences. Chaque morceau est transcrit par **Grok STT** (`x-ai/grok-stt-1.0`, via OpenRouter), avec l'horaire de chaque mot. Les mots sont ensuite regroupés en lignes de sous-titres.
+2. **Relecture** : **Claude Haiku 5.5** corrige l'orthographe, la ponctuation et les noms propres, et retire les hésitations (« euh », « mmh », « bah, », bégaiements). Il n'a jamais le droit de reformuler.
+3. **Garde-fou** : une correction n'est gardée que si elle conserve les mêmes mots dans le même ordre. Seul un mot très proche peut changer, par exemple pour l'orthographe ou un mot mal entendu. Sinon, la ligne garde le texte de Grok, débarrassé de ses hésitations.
+
+Règles :
+- **Textes protégés** : une transcription corrigée à la main ou traduite n'est jamais touchée.
+- **Retour en arrière** : l'ancienne transcription est sauvegardée. « Restaurer l'ancienne », sur la page de la vidéo, la remet à l'identique.
+- **Après une retranscription réussie** : les extraits proposés sont refaits sur le nouveau texte.
+- **En cas d'échec** : une seule nouvelle tentative 30 minutes plus tard. Après un second échec, la vidéo garde la **méthode initiale** : sa transcription actuelle ou, si elle n'en a pas, les sous-titres YouTube (Supadata).
+- **Ordre et rythme** : une vidéo à la fois, les plus récentes d'abord. Le plafond est de 2 heures d'audio par jour par défaut (volontairement bas : on contrôle la qualité sur les premières vidéos, puis on le relève), réglable sur la page Synchronisation, où l'on peut aussi mettre en pause.
+
+**Coût** : environ 0,10 $ par heure d'audio pour Grok, et quelques centimes de relecture. Rien à configurer : la clé `OPENROUTER_API_KEY` suffit.
+
+## Coûts API
+
+L'onglet « Coûts API » de l'admin montre ce que coûte chaque tâche, modèle par modèle :
+- les totaux du jour, des 7 derniers jours, du mois en cours et du mois précédent ;
+- le détail des appels, erreurs, tokens, minutes d'audio, coût, part du total et coût moyen par appel ;
+- l'historique sur 30 jours.
+
+Les montants sont ceux qu'OpenRouter et Apify facturent réellement (`usage.cost`, `usageTotalUsd`). Supadata (en crédits) et les banques d'images (gratuites) sont comptés en nombre d'appels, sans montant.
+
 ## Résumés automatiques
 
 Chaque vidéo indexée a son **résumé, rédigé automatiquement** par un modèle (OpenRouter) à partir de la transcription : un
@@ -556,6 +582,8 @@ tools/transcribe.py  transcription locale gratuite (yt-dlp + Whisper) des vidéo
   summarize.js       résumé d'une transcription (repères de temps, 2 étapes si très long, nettoyage)
   studio/            studio public : rendu ffmpeg (render.js), détection et reconnaissance des visages (faces.js, faces-worker.js, yunet.js, sface.js, identity.js, references.js, nn.js), mesure du fond des sous-titres (box-probe.js), images libres de droits Pixabay / Pexels (stock.js), polices (fonts.json), musiques d'origine et bibliothèque de l'admin (music.json, music.js)
   wall/              mur des clips : client Apify (apify.js), classement, vignettes, actualisation planifiée (wall.js)
+  retranscribe/      retranscription à partir du son : audio découpé (audio.js), Grok STT (stt.js), relecture et garde-fou (proofread.js), file d'attente et sauvegardes (retranscribe.js)
+  usage.js           suivi des coûts API par jour, tâche et modèle
   agent/keys.js      clés API des agents IA (empreintes SHA-256, révocation)
   media.js           fichiers vidéo du studio : dépôt par morceaux, ffprobe, stockage
   clip-suggestions.js  extraits proposés par le LLM (numéros de lignes, horaires issus de la transcription)
