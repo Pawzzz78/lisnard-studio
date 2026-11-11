@@ -15,7 +15,7 @@ export async function fetchDescription(youtubeId, { exec = run, ytdlp = ensureYt
     const bin = await ytdlp();
     const { stdout } = await exec(bin, ['--skip-download', '--no-warnings', '--no-playlist', '--print', 'description', `https://www.youtube.com/watch?v=${youtubeId}`], { timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
     const text = String(stdout).trim();
-    return text && text !== 'NA' ? text.slice(0, MAX_DESCRIPTION) : null;
+    return text && text !== 'NA' ? text.slice(0, MAX_DESCRIPTION) : ''; // no description: '' is a valid, final answer
   } catch (e) {
     console.error(`Description de la vidéo ${youtubeId} : ${String(e.message).split('\n')[0]}`);
     return null;

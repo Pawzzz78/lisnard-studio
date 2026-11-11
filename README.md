@@ -300,6 +300,7 @@ Les interviews dont le fichier vidéo est sur le serveur sont retranscrites à p
 
 1. **Écoute** : l'audio est découpé en morceaux d'au plus 8 minutes, coupés dans les silences. Chaque morceau est transcrit par **Grok STT** (`x-ai/grok-stt-1.0`, via OpenRouter), avec l'horaire de chaque mot. Les mots sont ensuite regroupés en lignes de sous-titres.
 2. **Relecture** : **Claude Haiku 5.5** corrige l'orthographe, la ponctuation et les noms propres, et retire les hésitations (« euh », « mmh », « bah, », bégaiements). Il n'a jamais le droit de reformuler.
+   Grok et Haiku reçoivent aussi le **titre et la description YouTube** de la vidéo. Ils en tirent les noms d'émission, d'invités et les sigles (par exemple « DLIVE » au lieu de « Day Live »). La description est récupérée une seule fois avec yt-dlp, sans téléchargement.
 3. **Garde-fou** : une correction n'est gardée que si elle conserve les mêmes mots dans le même ordre. Seul un mot très proche peut changer, par exemple pour l'orthographe ou un mot mal entendu. Sinon, la ligne garde le texte de Grok, débarrassé de ses hésitations.
 
 Règles :

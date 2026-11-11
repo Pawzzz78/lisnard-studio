@@ -307,3 +307,20 @@ test('retranscription : titre et description donnés à Grok et à Haiku ; descr
   assert.equal(c.rows[0].audio_seconds, 120);
   assert.ok(Math.abs(c.total - 0.005) < 1e-9);
 });
+
+test('description introuvable (YouTube bloque le serveur) : rien n’est gardé, nouvel essai la fois suivante', { skip: !enabled }, async () => {
+  const id = await makeVideo('RETXtestDsc');
+  let asked = 0;
+  const deps = {
+    describe: async () => ((asked++), null),
+    silencesOf: async () => [],
+    chunkAudio: async () => Buffer.from('x'),
+    transcribe: async () => ({ text: 'x', words: [{ word: 'Bonsoir.', start: 0, end: 1 }], segments: [] }),
+    proofread: async (lines) => ({ lines, changed: 0, rejected: 0, failedBatches: 0, batches: 1 }),
+  };
+  const v = async () => (await pool.query('SELECT * FROM videos WHERE id = $1', [id])).rows[0];
+  await R.buildTranscript(await v(), deps);
+  assert.equal((await v()).description, null);
+  await R.buildTranscript(await v(), deps);
+  assert.equal(asked, 2);
+});

@@ -60,7 +60,8 @@ function lev(a, b) {
 export function faithful(orig, fixed, terms = []) {
   const a = words(stripFillers(orig));
   const b = words(fixed);
-  const known = new Set(terms.flatMap((t) => words(t)));
+  // Short words of multi-word names ("de", "des", "la") are not names: they get no looser matching
+  const known = new Set(terms.flatMap((t) => words(t)).filter((w) => w.length >= 3));
   const hasDigit = (x) => /\d/.test(x);
   const near = (x, y, loose = false) => !hasDigit(x + y) && lev(x, y) <= Math.max(1, Math.floor(Math.max(x.length, y.length) / (loose ? 2 : 3)));
   // reach[i][j]: the first i words of `a` line up with the first j words of `b`

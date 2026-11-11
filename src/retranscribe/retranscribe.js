@@ -52,7 +52,8 @@ async function secondsToday() {
 /** Description YouTube de la vidéo : lue en base, sinon récupérée une fois et gardée. */
 async function descriptionOf(video, describe) {
   if (video.description != null) return video.description;
-  const text = (await describe(video.youtube_id)) ?? '';
+  const text = await describe(video.youtube_id);
+  if (text == null) return ''; // fetch failed (YouTube often blocks servers): try again next time, store nothing
   await pool.query('UPDATE videos SET description = $2 WHERE id = $1', [video.id, text]);
   return text;
 }
