@@ -210,7 +210,11 @@ test('clips autorisés automatiquement, une seule fois, seulement pour les fichi
     suggested.push(id);
     return { clips: [] };
   };
-  const n = await vf.enableReadyClips({ suggest });
+  // cloud retranscription on: nothing is published before it is over
+  assert.equal(await vf.enableReadyClips({ suggest, retxOn: true }), 0);
+  assert.equal((await row(10)).clips_enabled, false);
+  await db.pool.query("UPDATE videos SET source = 'grok' WHERE youtube_id = $1", [ID(10)]);
+  const n = await vf.enableReadyClips({ suggest, retxOn: true });
   assert.ok(n >= 1);
   const auto = await row(10);
   assert.deepEqual([auto.clips_enabled, auto.auto_enabled_at !== null], [true, true]);
@@ -220,13 +224,13 @@ test('clips autorisés automatiquement, une seule fois, seulement pour les fichi
   // l'admin désactive les clips : le choix est respecté
   await db.pool.query('UPDATE videos SET clips_enabled = FALSE WHERE id = $1', [auto.id]);
   suggested.length = 0;
-  await vf.enableReadyClips({ suggest });
+  await vf.enableReadyClips({ suggest, retxOn: false });
   assert.equal((await row(10)).clips_enabled, false);
   assert.ok(!suggested.includes(auto.id));
   // option désactivée : rien n'est autorisé
   const other = await addVideo(12, { duration: 4 });
   await vf.fetchVideo(other);
-  assert.equal(await vf.enableReadyClips({ suggest, cfg: { ...fetchConfig(), enableClips: false } }), 0);
+  assert.equal(await vf.enableReadyClips({ suggest, retxOn: false, cfg: { ...fetchConfig(), enableClips: false } }), 0);
   assert.equal((await row(12)).clips_enabled, false);
 });
 

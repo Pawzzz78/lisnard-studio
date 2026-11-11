@@ -248,10 +248,16 @@ export async function fetchVideo(v, { exec, cfg = fetchConfig() } = {}) {
 }
 
 /** Autorise les clips des vidéos téléchargées par le site, une seule fois, et lance la proposition d'extraits. */
-export async function enableReadyClips({ suggest = generateClipSuggestions, cfg = fetchConfig() } = {}) {
+export async function enableReadyClips({ suggest = generateClipSuggestions, cfg = fetchConfig(), retxOn } = {}) {
   if (!cfg.enableClips) return 0;
+  // With the cloud retranscription on, publish only once it is over (done, or failed and kept the initial text):
+  // clips and subtitles come from the Grok text, never from the YouTube captions it replaces
+  const waitRetx = retxOn ?? (llmConfigured() && !(await getSetting('retx_settings', {}))?.paused);
+  const retxOver = waitRetx
+    ? `AND (source = 'grok' OR retx_status IN ('initial', 'restored') OR edited OR COALESCE(translated, FALSE) OR NOT COALESCE(file_has_audio, FALSE))`
+    : '';
   const { rows } = await pool.query(
-    `SELECT id FROM videos WHERE file_source = 'auto' AND file_name IS NOT NULL AND norm_text <> '' AND auto_enabled_at IS NULL AND NOT clips_enabled ORDER BY id`,
+    `SELECT id FROM videos WHERE file_source = 'auto' AND file_name IS NOT NULL AND norm_text <> '' AND auto_enabled_at IS NULL AND NOT clips_enabled ${retxOver} ORDER BY id`,
   );
   for (const { id } of rows) {
     const { rowCount } = await pool.query('UPDATE videos SET clips_enabled = TRUE, auto_enabled_at = now() WHERE id = $1 AND auto_enabled_at IS NULL', [id]);
