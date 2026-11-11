@@ -159,3 +159,12 @@ test('Titres des citations : écrits par le modèle, citations inchangées si la
   assert.equal(ko[0].title, undefined);
   assert.equal(playClipsFrom(ok)[0].title, 'Lisnard veut une droite indépendante');
 });
+
+test('légende d’une citation Play : la citation entière, jamais coupée au milieu d’une idée', async () => {
+  const { playClipsFrom, cutAtSentence } = await import('../src/clip-suggestions.js');
+  const text = 'il faut beaucoup moins de prélèvements sur les entreprises pour les rendre plus compétitives, moins de prélèvements sur le travail, sur les salariés, pour que le travail paie.';
+  const [clip] = playClipsFrom([{ text, start_s: 10 }], []);
+  assert.ok(clip.description.startsWith(`« ${text} »`));
+  assert.equal(cutAtSentence('Une idée complète ici. Une deuxième phrase bien trop longue pour tenir', 40), 'Une idée complète ici.');
+  assert.equal(cutAtSentence('un texte sans point qui continue encore et encore', 25), 'un texte sans point qui…');
+});

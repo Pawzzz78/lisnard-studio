@@ -168,6 +168,19 @@ const linesFor = (segs, [from, to]) =>
 
 const cleanText = (v, max) => String(v ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 
+/**
+ * Texte raccourci sans jamais couper une idée en plein milieu : entier s'il tient, sinon coupé à la dernière fin de phrase
+ * (si elle garde au moins la moitié du texte), sinon au dernier mot entier suivi de « … ».
+ */
+export function cutAtSentence(v, max) {
+  const t = cleanText(v, 100_000);
+  if (t.length <= max) return t;
+  const head = t.slice(0, max + 1);
+  const end = Math.max(...['. ', '! ', '? ', '… '].map((p) => head.lastIndexOf(p)));
+  if (end >= max / 2) return head.slice(0, end + 1).trim();
+  return `${head.slice(0, max - 1).replace(/\s+\S*$/, '').replace(/[\s,;:–-]+$/, '')}…`;
+}
+
 /** Extrait l'objet JSON de la réponse du modèle (tolère les balises ``` et le texte autour). */
 export function parseClipJson(raw) {
   const text = String(raw ?? '').replace(/```(?:json)?/gi, '');
@@ -187,13 +200,13 @@ const DEFAULT_TAGS = ['#lisnard', '#politique'];
  * Légende TikTok prête à copier-coller : texte court + 2 à 4 hashtags valides (lettres, chiffres, _), sans doublon. Ce que renvoie
  * le modèle est nettoyé (HTML, retours à la ligne, hashtags dans le texte, liens) ; s'il manque des hashtags, on complète.
  */
-export function buildCaption(rawDescription, rawHashtags, title) {
+export function buildCaption(rawDescription, rawHashtags, title, { maxText = 200 } = {}) {
   const tagOf = (t) => {
     const w = String(t ?? '').replace(/^#+/, '').normalize('NFC').replace(/[^\p{L}\p{N}_]/gu, '').slice(0, 30);
     return w.length >= 2 ? `#${w}` : null;
   };
   const fromText = [...String(rawDescription ?? '').matchAll(/#[\p{L}\p{N}_]+/gu)].map((m) => m[0]);
-  const body = cleanText(String(rawDescription ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/https?:\/\/\S+/g, ''), 200);
+  const body = cutAtSentence(String(rawDescription ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/https?:\/\/\S+/g, ''), maxText);
   const seen = new Set();
   const tags = [];
   const add = (t) => {
@@ -337,7 +350,8 @@ export function playClipsFrom(quotes, rows = []) {
       duration_s: Math.round((end - start) / 100) / 10,
       title,
       why: 'Citation repérée sur Lisnard Play.',
-      description: buildCaption(`« ${cleanText(text, 140)} »`, [], title).caption,
+      // The whole quote: cut mid-sentence it can say the opposite (« moins de prélèvements sur les » …)
+      description: buildCaption(`« ${cutAtSentence(text, 400)} »`, [], title, { maxText: 420 }).caption,
       score: 9,
       text: text.slice(0, 1800),
       source: 'play',
