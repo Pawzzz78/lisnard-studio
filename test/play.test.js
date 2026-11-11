@@ -168,3 +168,8 @@ test('légende d’une citation Play : la citation entière, jamais coupée au m
   assert.equal(cutAtSentence('Une idée complète ici. Une deuxième phrase bien trop longue pour tenir', 40), 'Une idée complète ici.');
   assert.equal(cutAtSentence('un texte sans point qui continue encore et encore', 25), 'un texte sans point qui…');
 });
+
+test('légende coupée : « M. Macron » n’est pas une fin de phrase', async () => {
+  const { cutAtSentence } = await import('../src/clip-suggestions.js');
+  assert.equal(cutAtSentence('Bonjour à tous ici présents. Je l’ai dit à M. Macron hier soir devant les caméras', 52), 'Bonjour à tous ici présents.');
+});

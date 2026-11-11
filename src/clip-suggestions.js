@@ -176,7 +176,13 @@ export function cutAtSentence(v, max) {
   const t = cleanText(v, 100_000);
   if (t.length <= max) return t;
   const head = t.slice(0, max + 1);
-  const end = Math.max(...['. ', '! ', '? ', '… '].map((p) => head.lastIndexOf(p)));
+  // Sentence ends, but not abbreviations: "M. Macron", "Mme. X", "Dr. Y" are mid-sentence
+  let end = -1;
+  for (const m of head.matchAll(/[.!?…](?=\s)/g)) {
+    const before = head.slice(0, m.index).split(/\s+/).pop();
+    if (m[0] === '.' && (/^\p{Lu}$/u.test(before) || /^(?:mme|mlle|dr|me|st|ste|cf|etc|av|bd|p|n°)$/i.test(before))) continue;
+    end = m.index;
+  }
   if (end >= max / 2) return head.slice(0, end + 1).trim();
   return `${head.slice(0, max - 1).replace(/\s+\S*$/, '').replace(/[\s,;:–-]+$/, '')}…`;
 }
