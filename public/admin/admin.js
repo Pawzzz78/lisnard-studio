@@ -5,6 +5,9 @@ const $nav = document.getElementById('nav');
 
 // ---------------------------------------------------------------- utilitaires
 
+/** replaceChildren that skips null / false / nested arrays, like h(): a bare null would print "null". */
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false));
+
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -120,7 +123,7 @@ function toast(text, kind = 'ok', actionLabel, onAction) {
   toastEl ??= document.body.appendChild(h('div', { class: 'toast', role: 'status' }));
   clearTimeout(toastTimer);
   toastEl.className = `toast ${kind}`;
-  toastEl.replaceChildren(
+  fill(toastEl, 
     text,
     actionLabel
       ? h('button', { type: 'button', class: 'btn secondary small', onclick: () => { toastEl.hidden = true; onAction(); } }, actionLabel)
@@ -258,7 +261,7 @@ async function route() {
     if (gen !== routeGen) return;
     if (!me.authenticated) return renderLogin();
     renderNav();
-    $app.replaceChildren(h('p', { class: 'status', role: 'status' }, 'Chargement…'));
+    fill($app, h('p', { class: 'status', role: 'status' }, 'Chargement…'));
     const m = location.hash.match(/^#\/video\/(\d+)/);
     if (m) await renderEditor(Number(m[1]));
     else if (location.hash === '#/sync') await renderSync();
@@ -279,7 +282,7 @@ async function route() {
   } catch (e) {
     if (gen !== routeGen) return;
     if (e instanceof AuthError) return renderLogin();
-    $app.replaceChildren(h('p', { class: 'status err', role: 'alert' }, e.message));
+    fill($app, h('p', { class: 'status err', role: 'alert' }, e.message));
   }
 }
 window.addEventListener('hashchange', route);
@@ -288,7 +291,7 @@ function renderNav() {
   const hash = location.hash;
   const here = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#/video/') ? '#/' : hash;
   const link = (href, label) => h('a', { href, 'aria-current': href === here ? 'page' : null }, label);
-  $nav.replaceChildren(
+  fill($nav, 
     link('#/', 'Vidéos'),
     link('#/sync', 'Synchronisation'),
     link('#/studio', 'Stats studio'),
@@ -323,7 +326,7 @@ function renderNav() {
 
 function renderLogin() {
   resetPage();
-  $nav.replaceChildren();
+  fill($nav);
   const msg = h('p', { class: 'status', role: 'status' });
   const pw = h('input', { type: 'password', autocomplete: 'current-password', required: true, autofocus: true });
   const submit = h('button', { class: 'btn', type: 'submit' }, 'Se connecter');
@@ -348,7 +351,7 @@ function renderLogin() {
     submit,
     msg,
   );
-  $app.replaceChildren(form);
+  fill($app, form);
   pw.focus();
 }
 
@@ -419,7 +422,7 @@ async function renderList() {
       : h('p', { class: 'status' }, 'Aucune vidéo pour le moment. Ajoute-en une ci-dessous.'),
   );
 
-  $app.replaceChildren(addForm(config), list);
+  fill($app, addForm(config), list);
 }
 
 function addForm(config) {
@@ -524,7 +527,7 @@ async function renderStudioStats() {
     const rate = p.created ? Math.min(100, Math.round((got / p.created) * 100)) : null;
     const capped = p.created > 0 && got > p.created;
     switcher.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.p === current)));
-    grid.replaceChildren(
+    fill(grid, 
       stat(p.created, plural(p.created, 'clip créé', 'clips créés'), 'Clips dont la création a été lancée'),
       stat(p.downloaded, plural(p.downloaded, 'clip téléchargé', 'clips téléchargés'), 'Clics sur « Télécharger » (un clip compte une fois)'),
       stat(p.shared, plural(p.shared, 'clip partagé', 'clips partagés'), 'Partages depuis le téléphone'),
@@ -544,7 +547,7 @@ async function renderStudioStats() {
       h('td', { class: 'bars' }, h('span', { class: 'bar a', style: `width:${(d.created / max) * 100}%` }), h('span', { class: 'bar b', style: `width:${((d.retrieved ?? d.downloaded + d.shared) / max) * 100}%` }))));
   const videoRows = st.videos.map((v) => h('tr', {}, h('td', {}, v.title || v.youtube_id), h('td', {}, String(v.created)), h('td', {}, String(v.retrieved ?? v.downloaded))));
 
-  $app.replaceChildren(
+  fill($app, 
     h('section', { class: 'panel' },
       h('h2', {}, 'Studio TikTok / Reels'),
       h('p', { class: 'status' }, 'Combien de clips ont été créés, puis téléchargés ou partagés par les visiteurs.'),
@@ -696,7 +699,7 @@ async function renderMusicLibrary() {
             libTitle.textContent = `Ma bibliothèque (${data.library.length})`;
             if (!data.library.length) {
               libUl = null;
-              libBody.replaceChildren(emptyLib());
+              fill(libBody, emptyLib());
             }
           });
         } }, 'Supprimer')));
@@ -728,7 +731,7 @@ async function renderMusicLibrary() {
       else lines.push('Pas encore actualisé : le premier classement arrive dans les minutes qui suivent le démarrage du serveur.');
     }
     if (ts.last_error && (!ts.last_ok_at || ts.last_error_at > ts.last_ok_at)) lines.push(`Dernière tentative en échec : ${ts.last_error} (nouvel essai automatique dans quelques heures).`);
-    trendBox.replaceChildren(
+    fill(trendBox, 
       h('h2', {}, `Tendances TikTok (${ts.live ?? 0})`),
       ...lines.map((l, i) => h('p', { class: i === 0 || !String(l).startsWith('Dernière tentative') ? 'status' : 'status err' }, l)),
       h('div', { class: 'actions' }, refreshBtn),
@@ -764,7 +767,7 @@ async function renderMusicLibrary() {
     libTitle = h('h2', {}, `Ma bibliothèque (${data.library.length})`);
     libUl = data.library.length ? h('ul', { class: 'mlist' }, data.library.map((t) => row(t, true))) : null;
     libBody = h('div', {}, libUl ?? emptyLib());
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Ajouter un morceau'),
         h('p', { class: 'status' }, `MP3, M4A, WAV, OGG ou FLAC, de ${data.limits.minS} s à ${fmtSpan(data.limits.maxS)}, ${Math.round(data.limits.maxBytes / 1048576)} Mo au maximum. Le morceau est converti en MP3 et son volume est égalisé pour que tous sonnent pareil sous la voix (seules les ${fmtSpan(data.limits.keepS)} du début sont conservées).`),
@@ -785,7 +788,7 @@ async function renderMusicLibrary() {
     );
   }
   draw();
-  $app.replaceChildren(h('section', { class: 'panel' }, h('h2', {}, 'Musiques du studio'), h('p', { class: 'status' }, 'Les morceaux ajoutés ici apparaissent dans l’onglet « Musique » du studio, rangés par catégorie (motivant, épique, cinématique).')), root);
+  fill($app, h('section', { class: 'panel' }, h('h2', {}, 'Musiques du studio'), h('p', { class: 'status' }, 'Les morceaux ajoutés ici apparaissent dans l’onglet « Musique » du studio, rangés par catégorie (motivant, épique, cinématique).')), root);
 }
 
 async function renderFaceReferences() {
@@ -820,7 +823,7 @@ async function renderFaceReferences() {
     const files = [...(input.files ?? [])];
     if (!files.length) return status(note, 'Choisis d’abord une ou plusieurs photos.', 'err');
     busy(sendBtn, async () => {
-    results.replaceChildren();
+    fill(results);
     try {
       for (const [i, f] of files.entries()) {
         status(note, `Analyse des photos… ${i + 1} / ${files.length} (environ une seconde par photo)`);
@@ -875,7 +878,7 @@ async function renderFaceReferences() {
 
   function draw() {
     const n = data.count;
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Reconnaissance de David Lisnard'),
         h('p', { class: 'status' }, 'Donne des photos de David Lisnard : dans les interviews où plusieurs personnes apparaissent (journaliste, public), le cadrage automatique du studio suivra lui plutôt que la personne la plus visible. Seules les empreintes des visages sont conservées, pas les photos.'),
@@ -902,7 +905,7 @@ async function renderFaceReferences() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderWallAdmin() {
@@ -974,7 +977,7 @@ async function renderWallAdmin() {
           h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('PATCH', `/wall/clips/${c.id}`, { hidden: !c.hidden }), c.hidden ? 'Clip rétabli.' : 'Clip masqué.') }, c.hidden ? 'Rétablir' : 'Masquer'),
           h('button', { class: 'btn secondary small', type: 'button', title: 'Masque tous les clips de cet auteur', onclick: go(() => api('PUT', `/wall/authors/${encodeURIComponent(c.author)}`, { hidden: !c.author_hidden }), c.author_hidden ? 'Auteur rétabli.' : 'Auteur masqué.') }, c.author_hidden ? 'Rétablir l’auteur' : 'Masquer l’auteur'))));
 
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Mur des clips'),
         h('p', { class: 'status' }, `Les TikToks publiés avec #${cfg.hashtag} sont récupérés avec Apify (acteur ${cfg.actor}), classés par vues, j’aime et commentaires (score = ${cfg.weights[0]} × vues + ${cfg.weights[1]} × j’aime + ${cfg.weights[2]} × commentaires), et les ${cfg.max} meilleurs sont affichés sur la page publique « Le mur ». `, h('a', { href: '/mur/', target: '_blank' }, 'Voir le mur')),
@@ -1000,7 +1003,7 @@ async function renderWallAdmin() {
     if (running) timer = setTimeout(reload, 3000);
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderUsage() {
@@ -1020,7 +1023,7 @@ async function renderUsage() {
     to.value = data.range.to;
     const t = data.totals;
     const maxDay = Math.max(0.0001, ...data.days.map((d) => d.cost_usd));
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Coûts API'),
         h('p', { class: 'status' }, 'Montants réels facturés, relevés à chaque appel (OpenRouter, Apify). Supadata (crédits) et les banques d’images (gratuites) sont comptés en appels, sans montant.'),
@@ -1062,7 +1065,7 @@ async function renderUsage() {
     );
   }
   await load();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderAgentKeys() {
@@ -1109,7 +1112,7 @@ async function renderAgentKeys() {
       });
     };
     const mcpConfig = JSON.stringify({ mcpServers: { 'lisnard-studio': { type: 'http', url: `${base}/api/agent/mcp`, headers: { Authorization: `Bearer ${fresh?.key ?? 'lsk_…'}` } } } }, null, 2);
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Agents IA'),
         h('p', { class: 'status' }, 'Une clé donne à un agent IA les mêmes possibilités qu’un visiteur du studio : choisir les extraits, personnaliser le clip (style, musique, zooms, images), le créer et télécharger le MP4. Aucun accès à l’admin.'),
@@ -1139,7 +1142,7 @@ async function renderAgentKeys() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderLibraryAdmin() {
@@ -1200,7 +1203,7 @@ async function renderLibraryAdmin() {
           c.file_state === 'active' ? h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('DELETE', `/library/clips/${c.id}/file`), 'Vidéo archivée.', 'Supprimer la vidéo de ce clip (les réglages restent) ?') }, 'Archiver la vidéo') : null,
           h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('DELETE', `/library/clips/${c.id}`), 'Clip supprimé.', 'Supprimer définitivement ce clip ?') }, 'Supprimer'))));
     const filters = [['recent', 'Récents'], ['reported', `Signalés (${counts.reported})`], ['hidden', 'Masqués'], ['archived', 'Archivés']];
-    root.replaceChildren(
+    fill(root, 
       h('section', { class: 'panel' },
         h('h2', {}, 'Bibliothèque de clips'),
         h('p', { class: 'status' }, 'Les clips publiés depuis le studio, publics ou privés. Publication directe : masque un clip ou un auteur pour le retirer de la page publique. ', h('a', { href: '/bibliotheque/', target: '_blank' }, 'Voir la bibliothèque')),
@@ -1217,7 +1220,7 @@ async function renderLibraryAdmin() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 /** Panneau « Retranscription (Grok + relecture) » de la page Synchronisation. */
@@ -1231,7 +1234,7 @@ async function retxPanelFill(panel, gen) {
       o = await api('GET', '/retranscribe/overview');
     } catch (e) {
       if (e instanceof AuthError) return renderLogin();
-      return panel.replaceChildren(h('h3', {}, 'Retranscription (Grok + relecture)'), h('p', { class: 'status err' }, e.message));
+      return fill(panel, h('h3', {}, 'Retranscription (Grok + relecture)'), h('p', { class: 'status err' }, e.message));
     }
     if (gen !== routeGen) return;
     const cap = h('input', { type: 'number', min: 0, max: 200, step: 1, value: o.settings.dailyHours, style: 'width:5rem', 'aria-label': 'Heures d’audio par jour' });
@@ -1254,7 +1257,7 @@ async function retxPanelFill(panel, gen) {
         fail(e, msg);
       }
     }));
-    panel.replaceChildren(...[
+    fill(panel, ...[
       h('h3', {}, 'Retranscription (Grok + relecture)'),
       h('p', { class: 'status' }, 'Les interviews sont retranscrites à partir du son (Grok STT), puis relues par Claude Haiku : orthographe, ponctuation, noms propres, « euh » retirés, sans jamais reformuler. L’ancienne transcription est sauvegardée et restaurable depuis la page de la vidéo. Les transcriptions corrigées à la main ou traduites ne sont jamais touchées.'),
       !o.configured ? h('p', { class: 'status err' }, 'Indisponible : la clé OpenRouter n’est pas configurée.') : null,
@@ -1588,7 +1591,7 @@ async function renderSync() {
 
   const retxPanel = h('section', { class: 'panel' });
   retxPanelFill(retxPanel, gen);
-  $app.replaceChildren(...[state, summariesPanel, filesPanel, retxPanel, channels, failed].filter(Boolean));
+  fill($app, ...[state, summariesPanel, filesPanel, retxPanel, channels, failed].filter(Boolean));
   cleanup(); // a re-render (timer, action) replaces the previous timer instead of adding one
 
   const sigOf = (x) =>
@@ -1628,6 +1631,8 @@ async function renderSync() {
 }
 
 // ---------------------------------------------------------------------- éditeur
+
+const usdFmt = (n) => `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 0.1 ? 4 : 2 })} $`;
 
 async function renderEditor(id) {
   const gen = routeGen;
@@ -1697,10 +1702,36 @@ async function renderEditor(id) {
       }
     }),
   );
+  // --- état de la vidéo, en un coup d'œil (mis à jour par les panneaux)
+  const statusStrip = h('div', { class: 'vstatus' });
+  let retxInfo = null;
+  let costTotal = null;
+  const SOURCE_LABEL = { supadata: 'sous-titres YouTube', whisper: 'Whisper (local)', grok: 'Grok + relecture', manual: 'collée à la main' };
+  function refreshStatus() {
+    const st = clipState;
+    const fileOk = Boolean(st?.file);
+    const hasText = segs.length > 0;
+    const enabled = Boolean(st?.enabled);
+    const visible = fileOk && enabled && hasText;
+    const why = !hasText ? 'pas de transcription' : !fileOk ? 'pas de fichier vidéo (onglet Clips)' : 'clips non autorisés (onglet Clips)';
+    const chip = (label, value, kind = '') => h('span', { class: `vchip ${kind}` }, h('span', { class: 'vchip-label' }, label), value);
+    const retx = retxInfo ? ({ done: 'faite', running: 'en cours…', retry: 'nouvelle tentative prévue', initial: 'échec, texte d’origine gardé', restored: 'ancienne restaurée', todo: 'à faire' }[retxInfo] ?? retxInfo) : null;
+    fill(statusStrip, ...[
+      chip('Studio', visible ? 'visible' : `invisible : ${why}`, visible ? 'ok' : 'warn'),
+      chip('Transcription', hasText ? `${SOURCE_LABEL[video.source] ?? video.source ?? '—'}${video.edited ? ', corrigée à la main' : ''}${video.translated ? ', traduite' : ''}` : 'aucune', hasText ? '' : 'warn'),
+      chip('Fichier', fileOk ? `${st.file.height ? `${st.file.height}p · ` : ''}${fmtDuration(Math.round(st.file.duration_s))}` : 'aucun', fileOk ? '' : 'warn'),
+      retx ? chip('Retranscription', retx, retxInfo === 'done' ? 'ok' : retxInfo === 'initial' ? 'warn' : '') : null,
+      chip('Résumé', { edited: 'corrigé', ready: 'prêt', waiting: 'en attente', failed: 'en échec', none: 'aucun' }[summary.status] ?? '—', summary.status === 'failed' ? 'warn' : ''),
+      costTotal != null ? chip('Coût API', usdFmt(costTotal)) : null,
+    ].filter(Boolean));
+  }
+
   const info = h(
     'section',
     { class: 'panel' },
     h('h2', {}, video.title || video.youtube_id),
+    statusStrip,
+    h('details', { class: 'vinfo' }, h('summary', {}, 'Infos de la vidéo (titre, chaîne, date, langue)'),
     h(
       'div',
       { class: 'row' },
@@ -1740,8 +1771,8 @@ async function renderEditor(id) {
             'Mettre à jour depuis YouTube',
           )
         : null,
-      h('a', { href: `https://www.youtube.com/watch?v=${video.youtube_id}`, target: '_blank', rel: 'noopener' }, 'Ouvrir sur YouTube ↗'),
-    ),
+    )),
+    h('p', { class: 'vlinks' }, h('a', { href: `https://www.youtube.com/watch?v=${video.youtube_id}`, target: '_blank', rel: 'noopener' }, 'Ouvrir sur YouTube ↗')),
   );
 
   // --- liste des segments
@@ -1755,7 +1786,7 @@ async function renderEditor(id) {
 
   function renderSegs() {
     rowEls.length = 0;
-    list.replaceChildren();
+    fill(list);
     if (!segs.length) list.append(h('p', { class: 'status' }, 'Aucun segment. Utilise « + » ou importe une transcription.'));
     segs.forEach((s, i) => {
       const ts = h('input', {
@@ -1955,6 +1986,8 @@ async function renderEditor(id) {
       return fail(err, retxMsg);
     }
     const st = r.source === 'grok' && r.retx_status !== 'running' ? 'done' : (r.retx_status ?? 'todo');
+    retxInfo = st;
+    refreshStatus();
     const blocked = r.edited ? 'Transcription corrigée à la main : elle n’est jamais retranscrite.' : r.translated ? 'Transcription traduite : elle n’est pas retranscrite.' : !r.has_audio ? 'Pas de fichier vidéo avec du son.' : null;
     const run = h('button', { class: 'btn secondary small', type: 'button', disabled: Boolean(blocked) || st === 'running' }, st === 'done' ? 'Retranscrire à nouveau' : 'Retranscrire maintenant');
     run.addEventListener('click', (ev) => {
@@ -1984,7 +2017,7 @@ async function renderEditor(id) {
         } }, 'Restaurer l’ancienne')
       : null;
     const s2 = r.retx_stats;
-    retxBody.replaceChildren(...[
+    fill(retxBody, ...[
       h('p', { class: 'status' }, `État : ${RETX_LABEL[st] ?? st}${r.retx_at ? ` (${new Date(r.retx_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })})` : ''}.`),
       st === 'done' && s2 ? h('p', { class: 'status' }, `${s2.lines} lignes, ${s2.changed} corrigées par la relecture, ${s2.rejected} corrections refusées par le garde-fou.`) : null,
       r.retx_error && st !== 'done' ? h('p', { class: 'status err' }, r.retx_error) : null,
@@ -2148,7 +2181,7 @@ async function renderEditor(id) {
     { class: 'panel' },
     h(
       'details',
-      { open: summary.status === 'failed' || summary.status === 'edited' },
+      { open: true },
       h('summary', {}, `Résumé IA : ${{ edited: 'corrigé à la main', ready: 'prêt', waiting: 'en attente', failed: 'en échec', none: 'aucun' }[summary.status]}`),
       h('p', { class: summary.status === 'failed' ? 'status err' : 'status' }, sumText),
       summary.status === 'none'
@@ -2206,7 +2239,7 @@ async function renderEditor(id) {
   function drawFaces() {
     clearTimeout(facesTimer);
     const fc = clipState?.faces;
-    if (!clipState?.file || !fc || fc.status === 'off') return facesBox.replaceChildren();
+    if (!clipState?.file || !fc || fc.status === 'off') return fill(facesBox);
     const analysing = fc.status === 'queued' || fc.status === 'running';
     const phase = fc.phase === 'identify' ? 'Reconnaissance de David Lisnard' : fc.phase === 'rescue' ? 'Deuxième passe sur les visages difficiles' : 'Analyse';
     const id2 = fc.ident ?? { state: 'off' };
@@ -2247,7 +2280,7 @@ async function renderEditor(id) {
       });
       drawFaces();
     });
-    facesBox.replaceChildren(
+    fill(facesBox, 
       h('h3', { class: 'clips-sub' }, 'Cadrage automatique sur le visage'),
       h('p', { class: `status${fc.status === 'failed' ? ' err' : ''}` }, text),
       fc.status === 'ready' && fc.summary?.share != null && (fc.summary.share < 0.5 || fc.summary.median_w < 0.04)
@@ -2328,7 +2361,7 @@ async function renderEditor(id) {
   function renderClips() {
     const st = clipState;
     if (!st) {
-      clipsPanel.replaceChildren(h('p', { class: 'status err' }, 'Le studio de clips est indisponible.'));
+      fill(clipsPanel, h('p', { class: 'status err' }, 'Le studio de clips est indisponible.'));
       return;
     }
     const f = st.file;
@@ -2442,10 +2475,10 @@ async function renderEditor(id) {
       );
     });
 
-    clipsPanel.replaceChildren(
+    fill(clipsPanel, 
       h(
         'details',
-        { open: Boolean(f) || Boolean(sg) },
+        { open: true },
         h('summary', {}, `Clips TikTok : ${label}`),
         st.ffmpeg ? null : unavailable('le dépôt de vidéos est impossible sur ce serveur.', 'ffmpeg absent'),
         st.ffmpeg && !st.render_ready ? unavailable('le studio ne pourra pas créer de clips (le serveur ne sait pas incruster les sous-titres ni encoder la vidéo).', 'ffmpeg sans sous-titres / H.264 ; voir les journaux de démarrage') : null,
@@ -2476,6 +2509,7 @@ async function renderEditor(id) {
       ),
     );
     drawFaces();
+    refreshStatus();
   }
   renderClips();
 
@@ -2588,11 +2622,70 @@ async function renderEditor(id) {
     saveBtn,
   );
 
+  // --- coûts API de cette vidéo
+  const costsPanel = h('section', { class: 'panel' }, h('h3', {}, 'Coûts API de cette vidéo'), h('p', { class: 'status' }, 'Chargement…'));
+  async function loadCosts() {
+    try {
+      const c = await api('GET', `/videos/${id}/costs`);
+      if (pageLeft) return;
+      costTotal = c.total;
+      refreshStatus();
+      fill(costsPanel, 
+        h('h3', {}, 'Coûts API de cette vidéo'),
+        h('p', { class: 'status' }, 'Montants réels facturés (OpenRouter), par tâche et par modèle, depuis la mise en place du suivi par vidéo. Les totaux de tout le site sont dans « Coûts API » du menu.'),
+        c.rows.length
+          ? h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, ['Tâche', 'Modèle', 'Appels', 'Audio', 'Coût'].map((t) => h('th', {}, t)))),
+            h('tbody', {}, c.rows.map((r) => h('tr', {},
+              h('td', {}, r.label),
+              h('td', {}, h('code', {}, r.model || '—')),
+              h('td', { class: 'num' }, String(r.calls)),
+              h('td', { class: 'num' }, r.audio_seconds ? `${Math.round(r.audio_seconds / 60)} min` : '—'),
+              h('td', { class: 'num' }, usdFmt(r.cost_usd))))),
+            h('tfoot', {}, h('tr', {}, h('td', { colspan: 4 }, 'Total'), h('td', { class: 'num' }, usdFmt(c.total)))))
+          : h('p', { class: 'status' }, 'Aucun appel payant enregistré pour cette vidéo.'),
+      );
+    } catch (err) {
+      if (err instanceof AuthError) return renderLogin();
+      fill(costsPanel, h('h3', {}, 'Coûts API de cette vidéo'), h('p', { class: 'status err' }, err.message));
+    }
+  }
+  loadCosts();
+
+  // --- onglets : chaque sujet à sa place
+  const TABS = [
+    ['transcription', 'Transcription', [retxPanel, tools, source, whisperPanel, translatePanel]],
+    ['clips', 'Clips & studio', [clipsPanel]],
+    ['resume', 'Résumé', [summaryPanel]],
+    ['couts', 'Coûts API', [costsPanel]],
+    ['avance', 'Avancé', [danger]],
+  ];
+  let tabKey = 'transcription';
+  try {
+    tabKey = localStorage.getItem('admin-video-tab') || tabKey;
+  } catch {}
+  if (!TABS.some(([k]) => k === tabKey)) tabKey = 'transcription';
+  const tabBodies = Object.fromEntries(TABS.map(([k, , panels]) => [k, h('div', { class: 'vtab-body', role: 'tabpanel', id: `vtab-${k}` }, panels)]));
+  const tabBtns = TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: 'vtab', 'aria-controls': `vtab-${k}`, onclick: () => showTab(k) }, label));
+  function showTab(k) {
+    tabKey = k;
+    TABS.forEach(([key], i) => {
+      tabBtns[i].setAttribute('aria-selected', String(key === k));
+      tabBodies[key].hidden = key !== k;
+    });
+    if (k === 'couts') loadCosts();
+    try {
+      localStorage.setItem('admin-video-tab', k);
+    } catch {}
+  }
+  showTab(tabKey);
+
   renderSegs();
-  $app.replaceChildren(
+  refreshStatus();
+  fill($app, 
     h('p', {}, h('a', { href: '#/' }, '← Toutes les vidéos')),
     info,
-    h('div', { class: 'editor' }, h('aside', { class: 'side' }, playerBox, summaryPanel, clipsPanel, whisperPanel, retxPanel, translatePanel, tools, source, danger), list),
+    h('div', { class: 'editor' }, h('aside', { class: 'side' }, playerBox, h('div', { class: 'vtabs', role: 'tablist' }, tabBtns), Object.values(tabBodies)), list),
     savebar,
   );
 

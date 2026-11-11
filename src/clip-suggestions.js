@@ -251,7 +251,7 @@ export function mergeClips(clips, max = CLIP_LIMITS.maxSuggestions) {
  * Demande des extraits au modèle pour une liste de segments. `complete` est injectable pour les tests ; `stats` (facultatif) reçoit
  * { proposed, valid, junk } : ce que le modèle a proposé, ce qui avait des horaires et une durée valides, et la part écartée comme creuse.
  */
-export async function suggestClipsFor(rows, { complete = completeWithOpenRouter, model = clipModel(), stats = {} } = {}) {
+export async function suggestClipsFor(rows, { complete = completeWithOpenRouter, model = clipModel(), stats = {}, videoId = null } = {}) {
   const coarse = prepareSegments(rows);
   if (coarse.length < 3) throw new HttpError(409, 'Transcription trop courte pour proposer des extraits.');
   const segs = refineSegments(coarse); // gros morceaux : découpés en phrases pour pouvoir choisir des tranches plus fines
@@ -261,7 +261,7 @@ export async function suggestClipsFor(rows, { complete = completeWithOpenRouter,
   Object.assign(stats, { proposed: 0, valid: 0, junk: 0 });
   await forEachLimit(windows.length, 3, async (w) => {
     const win = windows[w];
-    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000, feature: 'extraits' }, { maxAttempts: 3, timeoutMs: 120_000 });
+    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000, feature: 'extraits', videoId }, { maxAttempts: 3, timeoutMs: 120_000 });
     for (const c of parseClipJson(raw)) {
       stats.proposed++;
       const clip = buildClip(c, segs, win);
@@ -282,7 +282,7 @@ export async function generateClipSuggestions(videoId, deps = {}) {
   const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [videoId]);
   const model = deps.model ?? clipModel();
   const stats = {};
-  const clips = await suggestClipsFor(rows, { ...deps, model, stats });
+  const clips = await suggestClipsFor(rows, { ...deps, model, stats, videoId });
   // le modèle a répondu mais rien n'a de durée ou d'horaires valides : problème technique, on réessaie. Une liste vide parce que rien
   // n'est assez fort (ou que tout était creux) est un résultat normal : on la garde, pour ne pas relancer le modèle à chaque fois.
   if (!clips.length && stats.proposed > 0 && stats.valid === 0) throw new LlmError("Le modèle n'a proposé aucun extrait utilisable : réessaie.");

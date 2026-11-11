@@ -52,28 +52,49 @@ function lev(a, b) {
 }
 
 /**
- * La correction garde-t-elle les mots prononcés ? Hésitations et bégaiements mis à part, les deux lignes doivent avoir les mêmes mots
- * dans le même ordre ; seul un mot très proche (orthographe, mot mal entendu) peut être remplacé. Aucun mot ajouté, retiré ou changé.
+ * La correction garde-t-elle les mots prononcés ? Hésitations et bégaiements mis à part, les mêmes mots dans le même ordre ;
+ * seul un mot très proche (orthographe, mot mal entendu) peut changer. Un nom du contexte (`terms` : titre, description,
+ * noms connus) peut en plus remplacer 1 à 3 mots qui s'en prononcent pareil (« Day Live » → « DLIVE », « Tailleux » → « Retailleau »).
+ * Aucun mot ajouté ou retiré, et un nombre ne change jamais.
  */
-export function faithful(orig, fixed) {
+export function faithful(orig, fixed, terms = []) {
   const a = words(stripFillers(orig));
   const b = words(fixed);
-  if (a.length !== b.length) return false;
-  // A number never changes: "30" -> "40" is a different statement, not a spelling fix
-  const near = (x, y) => !/\d/.test(x + y) && lev(x, y) <= Math.max(1, Math.floor(Math.max(x.length, y.length) / 3));
-  return a.every((w, i) => w === b[i] || near(w, b[i]));
+  const known = new Set(terms.flatMap((t) => words(t)));
+  const hasDigit = (x) => /\d/.test(x);
+  const near = (x, y, loose = false) => !hasDigit(x + y) && lev(x, y) <= Math.max(1, Math.floor(Math.max(x.length, y.length) / (loose ? 2 : 3)));
+  // reach[i][j]: the first i words of `a` line up with the first j words of `b`
+  const reach = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(false));
+  reach[0][0] = true;
+  for (let i = 0; i <= a.length; i++) {
+    for (let j = 0; j <= b.length; j++) {
+      if (!reach[i][j]) continue;
+      if (i < a.length && j < b.length && (a[i] === b[j] || near(a[i], b[j], known.has(b[j])))) reach[i + 1][j + 1] = true;
+      for (let k = 2; k <= 3; k++) {
+        // several heard words -> one context name, or one heard word -> a context name in several words
+        if (j < b.length && i + k <= a.length && known.has(b[j]) && near(a.slice(i, i + k).join(''), b[j], true)) reach[i + k][j + 1] = true;
+        if (i < a.length && j + k <= b.length && b.slice(j, j + k).every((w) => known.has(w)) && near(a[i], b.slice(j, j + k).join(''), true)) reach[i + 1][j + k] = true;
+      }
+    }
+  }
+  return reach[a.length][b.length];
 }
 
-const SYSTEM = `Tu relis la transcription automatique d'une interview en français, ligne par ligne. Le texte doit rester fidèle MOT POUR MOT à ce qui a été dit : c'est une citation.
+const systemPrompt = (terms, context) => `Tu relis la transcription automatique d'une interview en français, ligne par ligne. Le texte doit rester fidèle MOT POUR MOT à ce qui a été dit : c'est une citation.
 
 Tu as le droit UNIQUEMENT de :
 - corriger l'orthographe, les accords, les accents, les majuscules et la ponctuation ;
-- corriger l'écriture des noms propres, en particulier : ${KEYTERMS.join(', ')} ;
+- corriger l'écriture des noms propres, en particulier : ${terms.join(', ')} ;
 - retirer les hésitations (euh, heu, hum, mmh, « bah, » ou « ben, » en interjection) et les mots répétés par bégaiement (« le le » → « le »).
 
 Tu n'as JAMAIS le droit de reformuler, résumer, compléter, remplacer un mot par un synonyme, changer l'ordre des mots, fusionner ou couper des lignes, ni déplacer du texte d'une ligne à une autre. En cas de doute, ne change rien.
 
+Le titre et la description de la vidéo te donnent le contexte : nom de l'émission, invités, sujets. Sers-t'en pour écrire correctement les noms que la transcription a mal entendus (par exemple un nom d'émission découpé en deux mots), jamais pour ajouter du texte.
+${context}
 Réponds uniquement en JSON : {"fix":[{"i":<numéro de ligne>,"text":"<ligne corrigée>"}]}, en ne listant QUE les lignes que tu modifies.`;
+
+const contextBlock = ({ title, description } = {}) =>
+  [title ? `\nTitre de la vidéo : ${String(title).slice(0, 200)}` : '', description ? `Description de la vidéo :\n${String(description).slice(0, 1500)}` : ''].filter(Boolean).join('\n');
 
 function parseFixes(raw) {
   const s = String(raw).replace(/```(?:json)?/g, '');
@@ -86,7 +107,8 @@ function parseFixes(raw) {
  * une correction refusée, ou un lot que le modèle n'a pas pu relire, garde le texte d'origine, seulement débarrassé des hésitations.
  * Renvoie { lines, changed, rejected, failedBatches, batches }.
  */
-export async function proofreadLines(lines, { complete = completeWithOpenRouter, model = PROOFREAD_MODEL } = {}) {
+export async function proofreadLines(lines, { complete = completeWithOpenRouter, model = PROOFREAD_MODEL, terms = KEYTERMS, context = {}, videoId = null } = {}) {
+  const system = systemPrompt(terms, contextBlock(context));
   const out = lines.map((l) => ({ ...l, text: stripFillers(l.text) }));
   const stats = { changed: 0, rejected: 0, failedBatches: 0, batches: 0 };
   if (complete === completeWithOpenRouter && !llmConfigured()) return { lines: out, ...stats, failedBatches: Math.ceil(lines.length / BATCH), batches: Math.ceil(lines.length / BATCH) };
@@ -96,7 +118,7 @@ export async function proofreadLines(lines, { complete = completeWithOpenRouter,
     let fixes;
     try {
       const raw = await complete(
-        { model, system: SYSTEM, user: batch.map((l, k) => `[${k + 1}] ${l.text}`).join('\n'), maxTokens: 6000, feature: 'retranscription_relecture' },
+        { model, system, user: batch.map((l, k) => `[${k + 1}] ${l.text}`).join('\n'), maxTokens: 6000, feature: 'retranscription_relecture', videoId },
         { maxAttempts: 2, timeoutMs: 120_000 },
       );
       fixes = parseFixes(raw);
@@ -110,7 +132,7 @@ export async function proofreadLines(lines, { complete = completeWithOpenRouter,
       if (!Number.isInteger(k) || k < 0 || k >= batch.length || typeof f.text !== 'string') continue;
       const orig = batch[k].text;
       const fixed = stripFillers(f.text);
-      if (!fixed || !faithful(orig, fixed)) {
+      if (!fixed || !faithful(orig, fixed, terms)) {
         stats.rejected++;
         continue;
       }

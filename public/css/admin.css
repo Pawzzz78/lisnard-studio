@@ -195,3 +195,20 @@ input[type="file"]:hover::file-selector-button { background: var(--color-primary
 
 /* Coûts API : barre du coût par jour */
 .usage-bar { display: block; height: .55rem; min-width: 2px; border-radius: 3px; background: var(--color-primary); }
+
+/* Page d'une vidéo : état en un coup d'œil, onglets du panneau latéral */
+.vstatus { display: flex; flex-wrap: wrap; gap: .4rem; margin: .2rem 0 .8rem; }
+.vchip { display: inline-flex; align-items: baseline; gap: .4rem; padding: .3rem .7rem; border-radius: 999px; background: var(--color-surface, #f4f4f8); border: 1px solid var(--color-hairline, #e3e3ea); font-size: .82rem; }
+.vchip-label { font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--color-muted, #6b6b80); }
+.vchip.ok { border-color: #1f8a4c; background: #eaf7ef; }
+.vchip.warn { border-color: #b4521e; background: #fdf0e8; }
+.vinfo > summary { cursor: pointer; font-weight: 700; margin-bottom: .6rem; }
+.vlinks { margin: .6rem 0 0; }
+.side { display: flex; flex-direction: column; }
+.side > * { flex: none; }
+.vtabs { display: flex; flex-wrap: wrap; gap: .25rem; padding: .3rem; border-radius: var(--radius); background: var(--color-surface, #f4f4f8); }
+.vtab { font: inherit; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; border: 0; background: transparent; color: var(--color-primary); padding: .5rem .7rem; border-radius: 999px; cursor: pointer; }
+.vtab[aria-selected="true"] { background: var(--color-primary); color: #fff; }
+.vtab:focus-visible { outline: 3px solid var(--color-ring, #8ab4ff); outline-offset: 2px; }
+.vtab-body { display: grid; gap: 1rem; }
+.vtab-body[hidden] { display: none; }

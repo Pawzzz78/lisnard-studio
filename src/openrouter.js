@@ -57,7 +57,7 @@ function emptyResponseError(choice, model) {
  * `feature` : tâche à laquelle le coût est imputé dans le suivi des coûts (voir usage.js).
  */
 export async function completeWithOpenRouter(
-  { model, system, user, maxTokens = 8000, feature = 'autre' },
+  { model, system, user, maxTokens = 8000, feature = 'autre', videoId = null },
   { fetchImpl = fetch, retryDelayMs = 1000, timeoutMs = 120_000, maxAttempts = 4 } = {},
 ) {
   const key = process.env.OPENROUTER_API_KEY;
@@ -65,7 +65,7 @@ export async function completeWithOpenRouter(
   try {
     return await attemptAll();
   } catch (e) {
-    await recordUsage({ feature, provider: 'openrouter', model, error: true, calls: 0 }); // failed task; billed attempts are already counted
+    await recordUsage({ feature, provider: 'openrouter', model, videoId, error: true, calls: 0 }); // failed task; billed attempts are already counted
     throw e;
   }
 
@@ -100,7 +100,7 @@ export async function completeWithOpenRouter(
       }
       const json = await res.json().catch(() => ({}));
       // Every answered request is billed, even an empty or failed one
-      if (json.usage) await recordUsage({ feature, provider: 'openrouter', model, ...fromOpenRouter(json.usage) });
+      if (json.usage) await recordUsage({ feature, provider: 'openrouter', model, videoId, ...fromOpenRouter(json.usage) });
       // OpenRouter peut aussi répondre 200 avec un objet `error` quand le fournisseur en amont échoue.
       const apiError = json.error ?? (res.ok ? null : { message: res.statusText });
       if (apiError) {
