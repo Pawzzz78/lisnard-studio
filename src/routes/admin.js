@@ -17,6 +17,7 @@ import { facesAdminRouter } from './faces-admin.js';
 import { wallAdminRouter } from './wall-admin.js';
 import { libraryAdminRouter } from './library-admin.js';
 import { musicAdminRouter } from './music-admin.js';
+import { editAdminRouter } from './edit-admin.js';
 import { cancelAnalysis } from '../studio/faces.js';
 import { studioStats } from '../studio/stats.js';
 import { syncRouter } from './sync-admin.js';
@@ -97,6 +98,7 @@ adminRouter.use('/library', libraryAdminRouter); // bibliothèque de clips : mod
 adminRouter.use('/wall', wallAdminRouter); // mur des clips : actualisation et modération
 adminRouter.use('/faces', facesAdminRouter); // photos de référence de la personne à reconnaître
 adminRouter.use('/studio/music', musicAdminRouter); // bibliothèque de musiques du studio
+adminRouter.use('/edit', editAdminRouter); // section « Edit » : modèles de montage et photothèque
 adminRouter.use('/videos/:id', clipsAdminRouter); // fichier vidéo, clips autorisés, extraits proposés
 
 // --- vidéos ----------------------------------------------------------------

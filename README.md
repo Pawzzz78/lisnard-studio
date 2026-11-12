@@ -285,6 +285,52 @@ qu'à choisir les extraits.
 - **Sur Railway** : le volume est monté sur `/data` (`STORAGE_DIR=/data/storage`) et ffmpeg est installé dans l'image grâce à la
   variable `NIXPACKS_APT_PKGS=ffmpeg` (le constructeur réellement utilisé est Nixpacks, comme l'indique `railway.json`).
 
+## Section « Edit » : montages rythmés sur un son (en construction)
+
+Deuxième section de création, séparée du clipping : un **montage rythmé** façon « edit » TikTok. Coupes, zooms, flashs, secousses et
+textes tombent sur les temps forts d'un son de la bibliothèque. Les images viennent des interviews du site et d'une photothèque de
+David Lisnard ; les modèles sont créés par l'admin. Tout est calculé sur le serveur avec ffmpeg, sans service payant.
+
+Étape 1 (fondations, sans page pour l'instant) :
+
+- **Temps forts d'un son** (`src/edit/beats.js`) : le son est décodé en mono 11 kHz ; la courbe des attaques (variation de l'énergie, aigus
+  accentués) donne le tempo (autocorrélation entre 70 et 180 BPM, affinée sur toute la durée), la grille des temps, les temps forts (un sur
+  quatre) et les « drops » (mesure beaucoup plus forte que les deux précédentes). Une note de netteté dit si l'analyse est sûre (au-dessus de
+  2,5) : sur les 10 morceaux d'origine du site, les 6 tempos justes sont tous au-dessus, les 4 faux tous en dessous ; pour ceux-là, le modèle
+  peut imposer son tempo (`bpm`). Résultat gardé en base (`music_beats`, lié à l'empreinte du fichier) : un son n'est analysé qu'une fois.
+- **Modèles et chronologie** (`public/js/edit-core.js`, module pur partagé avec le navigateur) : un modèle = un son, un passage (début,
+  nombre de temps, 30 s au plus) et une recette (sections : coupe tous les ½, 1, 2, 4 ou 8 temps, effets à tour de rôle, part de photos ;
+  étalonnage). Recettes de départ : Punch, Cinématique, Hype, Nostalgie. `planEdit` en tire une chronologie déterministe : une case par
+  coupe, calée sur les temps, photos réparties selon la part choisie, extraits d'interviews pris à tour de rôle (des moments différents à
+  chaque fois), flash ajouté sur les temps forts et les drops, 40 cases au plus, jusqu'à 3 textes posés sur des temps.
+- **Rendu** (`src/edit/render.js`) : une entrée ffmpeg par case (morceau d'interview lu à partir de son instant et recadré en vertical,
+  ou photo avec un zoom lent), l'effet de la coupe (zoom punch, zoom lent, secousse, flash blanc, noir et blanc, décalage des couleurs),
+  puis tout bout à bout, l'étalonnage, les textes (ASS, en capitales, effet « pop ») et la musique du modèle. Le rendu passe par **la même
+  file que les clips** (`enqueueJob` dans `src/studio/render.js` : un seul ffmpeg à la fois, mêmes limites par visiteur), et les fichiers
+  des interviews utilisées ne peuvent pas être supprimés pendant le rendu.
+- Tests : `test/edit-beats.test.js` (sons de synthèse : 120 et 90 BPM, temps à moins de 25 ms, bruit jugé peu sûr, drop, cache),
+  `test/edit-core.test.js`, `test/edit-render.test.js` (rendu réel 1080 × 1920 : chaque coupe vue à moins de 40 ms de son temps).
+
+Étape 2 (admin → « Edit ») :
+
+- **Photothèque de David Lisnard** (`src/edit/images.js`, table `edit_images`) : JPEG, PNG ou WebP déposés par l'admin, qui confirme en avoir
+  les droits ; 300 px de côté au minimum, 25 Mo au plus ; réduits à 2160 px et convertis en JPEG, avec une vignette de 360 px
+  (`<STORAGE_DIR>/edit/images/`). Titre, crédit, visibilité, suppression ; 300 photos au plus.
+- **Modèles** (`src/edit/templates.js`, table `edit_templates`) : créés à partir d'une recette de départ, puis réglés sur une page dédiée :
+  le son (sons tendance en tête), sa **forme d'onde** avec les temps, les temps forts et les drops (un clic fait commencer le passage sur le
+  temps fort le plus proche ; « Écouter le passage »), la longueur en temps, un tempo imposé si le rythme est peu net, les sections de la
+  recette (durée, coupe tous les ½ à 8 temps, effets, part de photos), l'étalonnage, la police et jusqu'à 3 textes.
+- **Aperçu** : rendu en 360 × 640 par la file des clips, avec les photos actives de la photothèque et deux extraits proposés de chacune des
+  trois interviews les plus récentes du studio ; gardé dans `<STORAGE_DIR>/edit/previews/`. Un modèle ne peut être mis en ligne qu'avec un
+  aperçu ; modifier ses réglages efface l'aperçu, et le modèle n'est plus proposé aux adhérents tant qu'il n'est pas regénéré (ni si son
+  son a quitté la bibliothèque).
+- **Temps forts de toute la bibliothèque** (`src/edit/warmup.js`) : analysés en tâche de fond 3 minutes après le démarrage puis toutes les
+  6 heures (ajouts de l'admin, sons tendance de la semaine) ; un son déjà analysé n'est pas repris. L'analyse garde aussi l'enveloppe du son
+  (forme d'onde, 600 valeurs au plus).
+- Routes : `/api/admin/edit` (`src/routes/edit-admin.js`). Tests : `test/edit-admin.test.js`.
+
+Étape suivante : la page publique `/edit/` et la navigation « Clipping · Edit ».
+
 ## API privée et serveur MCP pour les agents IA
 
 Avec une clé API, un agent IA peut créer, personnaliser et télécharger des clips comme un visiteur du studio, en HTTP (`/api/agent/v1/…`) ou par MCP (`/api/agent/mcp`).

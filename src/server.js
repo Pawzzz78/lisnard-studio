@@ -22,6 +22,7 @@ import { startVideoFilesCheck } from './video-files-check.js';
 import { startPlayImport } from './play.js';
 import { startRetranscribeScheduler } from './retranscribe/retranscribe.js';
 import { startTrendingScheduler } from './studio/trending.js';
+import { startBeatsWarmup } from './edit/warmup.js';
 
 // Origins the pages really use: YouTube (admin player, thumbnails), TikTok (wall), Pixabay/Pexels (stock thumbnails); blob: and data: for the end card photo and the account logo kept in the browser.
 // Inline styles stay allowed: the studio injects its @font-face rules and the admin sets style attributes.
@@ -110,4 +111,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   startPlayImport();
   startRetranscribeScheduler();
   startTrendingScheduler();
+  startBeatsWarmup();
 }

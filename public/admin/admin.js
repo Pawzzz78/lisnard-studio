@@ -270,6 +270,8 @@ async function route() {
     else if (location.hash === '#/visages') await renderFaceReferences();
     else if (location.hash === '#/mur') await renderWallAdmin();
     else if (location.hash === '#/bibliotheque') await renderLibraryAdmin();
+    else if (location.hash === '#/edit') await renderEditAdmin();
+    else if (/^#\/edit\/\d+$/.test(location.hash)) await renderEditTemplate(Number(location.hash.split('/')[2]));
     else if (location.hash === '#/agents') await renderAgentKeys();
     else if (location.hash === '#/couts') await renderUsage();
     else await renderList();
@@ -289,13 +291,14 @@ window.addEventListener('hashchange', route);
 
 function renderNav() {
   const hash = location.hash;
-  const here = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#/video/') ? '#/' : hash;
+  const here = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#/video/') ? '#/' : hash.startsWith('#/edit/') ? '#/edit' : hash;
   const link = (href, label) => h('a', { href, 'aria-current': href === here ? 'page' : null }, label);
   fill($nav,
     link('#/', 'Vidéos'),
     link('#/sync', 'Synchronisation'),
     link('#/studio', 'Stats studio'),
     link('#/musique', 'Musique'),
+    link('#/edit', 'Edit'),
     link('#/visages', 'Reconnaissance'),
     link('#/mur', 'Mur'),
     link('#/bibliotheque', 'Bibliothèque'),
@@ -1066,6 +1069,508 @@ async function renderUsage() {
   }
   await load();
   fill($app, root);
+}
+
+// ------------------------------------------------------------ section « Edit » : modèles de montage et photothèque
+
+/** Adresse d'écoute d'un son pour l'admin (les morceaux déposés passent par la route de l'admin, les morceaux d'origine sont publics). */
+const editTrackUrl = (t) => (t?.url?.startsWith('/api/studio/music/') ? `/api/admin/studio/music/${t.id}/file` : t?.url ?? '');
+
+async function renderEditAdmin() {
+  const gen = routeGen;
+  let data = await api('GET', '/edit');
+  if (gen !== routeGen) return;
+  const note = h('p', { class: 'status', role: 'status' });
+  const trackLabel = (t) => `${t.category === 'tendance' ? '🔥 ' : ''}${t.title}${t.credit ? ` — ${t.credit}` : ''}`;
+  const trackSelect = (value) =>
+    h('select', { id: 'ed-track' }, data.tracks.map((t) => h('option', { value: t.id, selected: t.id === value }, trackLabel(t))));
+
+  // --- new template from a starter recipe
+  const nName = h('input', { class: 'text', type: 'text', maxlength: String(data.limits.maxNameLen), placeholder: 'Ex. : Punch tendance', id: 'ed-name' });
+  const nRecipe = h('select', { id: 'ed-recipe' }, data.recipes.map((r) => h('option', { value: r.id }, `${r.label} : ${r.hint}`)));
+  const nTrack = trackSelect(data.tracks[0]?.id);
+  const createBtn = h('button', { class: 'btn', type: 'button' }, 'Créer le modèle');
+  createBtn.addEventListener('click', () =>
+    busy(createBtn, async () => {
+      try {
+        const r = await api('POST', '/edit/templates', { recipe_id: nRecipe.value, name: nName.value || undefined, track_id: nTrack.value, start_s: 0, length_beats: 32 });
+        location.hash = `#/edit/${r.template.id}`;
+      } catch (e) {
+        fail(e, note);
+      }
+    }),
+  );
+
+  const move = async (t, delta, ctrl) => {
+    const list = data.templates;
+    const i = list.indexOf(t);
+    const other = list[i + delta];
+    if (!other) return;
+    await busy(ctrl, async () => {
+      try {
+        await api('PATCH', `/edit/templates/${t.id}`, { position: other.position });
+        await api('PATCH', `/edit/templates/${other.id}`, { position: t.position });
+        data = await api('GET', '/edit');
+        drawTemplates();
+      } catch (e) {
+        fail(e, note);
+      }
+    });
+  };
+  const tplBox = h('div');
+  function drawTemplates() {
+    if (!data.templates.length) return fill(tplBox, h('p', { class: 'status' }, 'Aucun modèle pour le moment : crée le premier ci-dessus.'));
+    fill(tplBox, h('ul', { class: 'ed-tpls' }, data.templates.map((t, i) => {
+      const toggle = h('button', { class: t.enabled ? 'btn secondary small' : 'btn small', type: 'button' }, t.enabled ? 'Retirer du site' : 'Mettre en ligne');
+      toggle.addEventListener('click', () => busy(toggle, async () => {
+        try {
+          await api('PATCH', `/edit/templates/${t.id}`, { enabled: !t.enabled });
+          data = await api('GET', '/edit');
+          drawTemplates();
+          status(note, t.enabled ? 'Modèle retiré du site.' : 'Modèle en ligne : les adhérents le voient.', 'ok');
+        } catch (e) {
+          fail(e, note);
+        }
+      }));
+      const del = h('button', { class: 'btn danger small', type: 'button' }, 'Supprimer');
+      del.addEventListener('click', () => {
+        if (!confirm(`Supprimer le modèle « ${t.name} » ?`)) return;
+        busy(del, async () => {
+          try {
+            await api('DELETE', `/edit/templates/${t.id}`);
+            data = await api('GET', '/edit');
+            drawTemplates();
+          } catch (e) {
+            fail(e, note);
+          }
+        });
+      });
+      const up = h('button', { class: 'btn secondary small', type: 'button', disabled: i === 0, 'aria-label': `Monter ${t.name}` }, '↑');
+      const down = h('button', { class: 'btn secondary small', type: 'button', disabled: i === data.templates.length - 1, 'aria-label': `Descendre ${t.name}` }, '↓');
+      up.addEventListener('click', () => move(t, -1, up));
+      down.addEventListener('click', () => move(t, 1, down));
+      return h('li', { class: 'ed-tpl' },
+        t.has_preview
+          ? h('video', { class: 'ed-thumb', src: `/api/admin/edit/templates/${t.id}/preview.mp4?v=${encodeURIComponent(t.preview_at)}`, muted: true, loop: true, playsinline: '', preload: 'metadata', onmouseenter: (e) => e.target.play().catch(() => {}), onmouseleave: (e) => e.target.pause() })
+          : h('div', { class: 'ed-thumb empty' }, 'Pas d’aperçu'),
+        h('div', { class: 'ed-tpl-body' },
+          h('strong', {}, t.name),
+          h('small', {}, t.track_ok ? `Son : ${t.track_title}` : '⚠ Son retiré de la bibliothèque : choisis-en un autre.'),
+          h('div', { class: 'actions' },
+            h('span', { class: t.enabled ? 'badge ok' : 'badge' }, t.enabled ? 'En ligne' : 'Hors ligne'),
+            h('a', { class: 'btn small', href: `#/edit/${t.id}` }, 'Régler'),
+            toggle, up, down, del)));
+    })));
+  }
+
+  // --- photo library
+  const pFile = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, id: 'ed-pfile' });
+  const pTitle = h('input', { class: 'text', type: 'text', maxlength: '80', placeholder: 'Ex. : Meeting à Cannes (facultatif)', id: 'ed-ptitle' });
+  const pCredit = h('input', { class: 'text', type: 'text', maxlength: '200', placeholder: 'Ex. : © Photographe (facultatif)', id: 'ed-pcredit' });
+  const pRights = h('input', { type: 'checkbox', id: 'ed-prights' });
+  const pSend = h('button', { class: 'btn', type: 'button' }, 'Ajouter à la photothèque');
+  const pStatus = h('span', { class: 'status', role: 'status' });
+  const grid = h('div');
+  pSend.addEventListener('click', () => {
+    const files = [...(pFile.files ?? [])];
+    if (!files.length) return status(pStatus, 'Choisis d’abord une ou plusieurs photos.', 'err');
+    if (!pRights.checked) return status(pStatus, 'Coche la case : tu confirmes avoir le droit d’utiliser ces photos.', 'err');
+    busy(pSend, async () => {
+      let ok = 0;
+      for (const [k, f] of files.entries()) {
+        status(pStatus, `Envoi ${k + 1} / ${files.length}…`);
+        const q = new URLSearchParams({ rights: '1', title: pTitle.value, credit: pCredit.value });
+        try {
+          const res = await fetch(`/api/admin/edit/images?${q}`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 401) throw new AuthError();
+          if (!res.ok) throw new Error(`${f.name} : ${body.error || `erreur ${res.status}`}`);
+          data.images = body.images;
+          ok++;
+        } catch (e) {
+          if (e instanceof AuthError) return fail(e, pStatus);
+          status(pStatus, e.message, 'err');
+        }
+      }
+      drawImages();
+      if (ok) {
+        pFile.value = '';
+        status(pStatus, `${ok} photo${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}.`, 'ok');
+      }
+    });
+  });
+  function drawImages() {
+    if (!data.images.length) return fill(grid, h('p', { class: 'status' }, 'Aucune photo pour le moment.'));
+    fill(grid, h('ul', { class: 'ed-photos' }, data.images.map((p) => {
+      const vis = h('input', { type: 'checkbox', checked: p.enabled });
+      vis.addEventListener('change', async () => {
+        try {
+          const r = await api('PATCH', `/edit/images/${p.id}`, { enabled: vis.checked });
+          Object.assign(p, r.image);
+          li.classList.toggle('off', !p.enabled);
+        } catch (e) {
+          vis.checked = p.enabled;
+          fail(e, pStatus);
+        }
+      });
+      const del = h('button', { class: 'btn danger small', type: 'button', 'aria-label': `Supprimer ${p.title || 'la photo'}` }, 'Supprimer');
+      del.addEventListener('click', () => {
+        if (!confirm('Supprimer cette photo définitivement ?')) return;
+        busy(del, async () => {
+          try {
+            data.images = (await api('DELETE', `/edit/images/${p.id}`)).images;
+            drawImages();
+          } catch (e) {
+            fail(e, pStatus);
+          }
+        });
+      });
+      const li = h('li', { class: p.enabled ? 'ed-photo' : 'ed-photo off' },
+        h('img', { src: `/api/admin/edit/images/${p.id}/file?thumb=1`, alt: p.title || 'Photo de la photothèque', loading: 'lazy' }),
+        h('small', {}, [p.title, p.credit].filter(Boolean).join(' · ') || `${p.width} × ${p.height}`),
+        h('div', { class: 'actions' }, h('label', { class: 'check' }, vis, ' Visible'), del));
+      return li;
+    })));
+  }
+
+  drawTemplates();
+  drawImages();
+  fill($app,
+    h('section', { class: 'panel' },
+      h('h2', {}, 'Section Edit'),
+      h('p', { class: 'status' }, 'Montages rythmés sur un son : tu crées les modèles, les adhérents les remplissent avec les interviews et les photos de David Lisnard.')),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'Nouveau modèle'),
+      h('div', { class: 'field' }, h('label', { for: 'ed-name' }, 'Nom'), nName),
+      h('div', { class: 'field' }, h('label', { for: 'ed-recipe' }, 'Recette de départ'), nRecipe),
+      h('div', { class: 'field' }, h('label', { for: 'ed-track' }, 'Son'), nTrack),
+      h('div', { class: 'actions' }, createBtn)),
+    note,
+    h('section', { class: 'panel' }, h('h2', {}, `Modèles (${data.templates.length})`), tplBox),
+    h('section', { class: 'panel' },
+      h('h2', {}, `Photothèque (${data.images.length})`),
+      h('p', { class: 'status' }, `JPEG, PNG ou WebP, ${data.limits.image.minSide} px de côté au minimum, ${Math.round(data.limits.image.maxBytes / 1048576)} Mo au maximum. Les photos sont réduites à ${data.limits.image.maxSide} px.`),
+      h('div', { class: 'field' }, h('label', { for: 'ed-pfile' }, 'Photos'), pFile),
+      h('div', { class: 'field' }, h('label', { for: 'ed-ptitle' }, 'Titre'), pTitle),
+      h('div', { class: 'field' }, h('label', { for: 'ed-pcredit' }, 'Crédit'), pCredit),
+      h('label', { class: 'check' }, pRights, ' Je confirme avoir le droit d’utiliser ces photos.'),
+      h('div', { class: 'actions' }, pSend, pStatus),
+      grid),
+  );
+}
+
+/** Réglage d'un modèle : son et passage (sur la forme d'onde), recette, textes, aperçu, mise en ligne. */
+async function renderEditTemplate(id) {
+  const gen = routeGen;
+  const data = await api('GET', '/edit');
+  if (gen !== routeGen) return;
+  const one = data.templates.find((t) => t.id === id);
+  if (!one) throw new Error('Modèle introuvable.');
+  let cur = one;
+  let tpl = structuredClone(one.template);
+  let beats = null;
+  let dirty = false;
+  dirtyGuard = () => (dirty ? 'Des réglages du modèle ne sont pas enregistrés. Quitter quand même ?' : false);
+  const note = h('p', { class: 'status', role: 'status' });
+  const touch = () => {
+    dirty = true;
+    status(note, 'Réglages modifiés : pense à enregistrer.');
+  };
+
+  // --- sound, analysis and passage on the waveform
+  const name = h('input', { class: 'text', type: 'text', maxlength: String(data.limits.maxNameLen), value: tpl.name, id: 'et-name', oninput: (e) => { tpl.name = e.target.value; touch(); } });
+  const track = h('select', { id: 'et-track' }, data.tracks.map((t) => h('option', { value: t.id, selected: t.id === tpl.track_id }, `${t.category === 'tendance' ? '🔥 ' : ''}${t.title}`)));
+  const audio = h('audio', { controls: true, preload: 'none' });
+  const info = h('p', { class: 'status', role: 'status' });
+  const bpmIn = h('input', { class: 'text', type: 'number', min: '50', max: '220', step: '0.1', placeholder: 'auto', value: tpl.bpm ?? '', style: 'width:7rem', id: 'et-bpm' });
+  const startIn = h('input', { class: 'text', type: 'number', min: '0', step: '0.01', value: String(tpl.start_s), style: 'width:7rem', id: 'et-start' });
+  const lenSel = h('select', { id: 'et-len' }, [8, 12, 16, 24, 32, 48, 64, 96, 128].map((n) => h('option', { value: String(n), selected: n === tpl.length_beats }, `${n} temps`)));
+  const lenInfo = h('span', { class: 'status' });
+  const canvas = h('canvas', { class: 'ed-wave', width: '1200', height: '140', 'aria-label': 'Forme d’onde du son : clique pour choisir le début du passage' });
+  const playBtn = h('button', { class: 'btn secondary small', type: 'button' }, '▶ Écouter le passage');
+  let stopAt = null;
+  audio.addEventListener('timeupdate', () => {
+    if (stopAt != null && audio.currentTime >= stopAt) {
+      audio.pause();
+      stopAt = null;
+    }
+    draw();
+  });
+  const period = () => 60 / (tpl.bpm || beats?.bpm || 120);
+  /** Instants des temps du passage choisi (même règle que le rendu : premier temps au début choisi, puis la grille). */
+  const passage = () => {
+    const out = [];
+    const list = !tpl.bpm && beats?.beats?.length ? beats.beats.filter((b) => b >= tpl.start_s - 0.02) : [];
+    let t = list[0] ?? tpl.start_s;
+    for (let i = 0; i <= tpl.length_beats; i++) {
+      out.push(t);
+      t = list[i + 1] ?? t + period();
+    }
+    return out;
+  };
+  function draw() {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const dur = beats?.duration || 1;
+    const x = (t) => (t / dur) * W;
+    const p = passage();
+    ctx.fillStyle = 'rgba(205, 22, 81, .12)';
+    ctx.fillRect(x(p[0]), 0, Math.max(2, x(p.at(-1)) - x(p[0])), H);
+    ctx.fillStyle = '#1f2a6b';
+    (beats?.peaks ?? []).forEach((v, i, all) => {
+      const bh = Math.max(1, v * (H - 20));
+      ctx.fillRect((i / all.length) * W, (H - bh) / 2, Math.max(1, W / all.length - 1), bh);
+    });
+    const strong = new Set(beats?.strong ?? []);
+    (beats?.beats ?? []).forEach((b, i) => {
+      ctx.fillStyle = strong.has(i) ? 'rgba(160, 163, 126, .95)' : 'rgba(160, 163, 126, .35)';
+      ctx.fillRect(x(b), strong.has(i) ? 0 : H - 14, strong.has(i) ? 2 : 1, strong.has(i) ? H : 14);
+    });
+    ctx.fillStyle = '#cd1651';
+    for (const d of beats?.drops ?? []) ctx.fillRect(x(beats.beats[d]) - 1, 0, 3, H);
+    if (!audio.paused) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x(audio.currentTime), 0, 2, H);
+    }
+    const secs = p.at(-1) - p[0];
+    lenInfo.textContent = `${Math.round(secs * 10) / 10} s${secs > data.limits.maxDurationS ? ` (raccourci à ${data.limits.maxDurationS} s au plus)` : ''}`;
+  }
+  async function loadTrack() {
+    const t = data.tracks.find((x) => x.id === tpl.track_id);
+    audio.src = editTrackUrl(t);
+    beats = null;
+    draw();
+    status(info, 'Analyse du rythme…');
+    try {
+      beats = await api('GET', `/edit/tracks/${encodeURIComponent(tpl.track_id)}/beats`);
+      if (gen !== routeGen) return;
+      status(info, beats.bpm
+        ? `${beats.bpm} BPM · ${beats.reliable ? 'rythme net' : 'rythme peu net : indique le tempo à la main si les coupes tombent à côté'} · ${beats.drops.length} drop${beats.drops.length > 1 ? 's' : ''} (en rouge)`
+        : 'Pas de rythme trouvé : indique le tempo à la main.', beats.reliable ? 'ok' : 'err');
+    } catch (e) {
+      fail(e, info);
+    }
+    draw();
+  }
+  track.addEventListener('change', () => {
+    tpl.track_id = track.value;
+    tpl.start_s = 0;
+    startIn.value = '0';
+    touch();
+    loadTrack();
+  });
+  bpmIn.addEventListener('input', () => {
+    tpl.bpm = bpmIn.value === '' ? null : Number(bpmIn.value);
+    touch();
+    draw();
+  });
+  startIn.addEventListener('input', () => {
+    tpl.start_s = Math.max(0, Number(startIn.value) || 0);
+    touch();
+    draw();
+  });
+  lenSel.addEventListener('change', () => {
+    tpl.length_beats = Number(lenSel.value);
+    tpl.texts = tpl.texts.filter((t) => t.beat < tpl.length_beats);
+    touch();
+    draw();
+    drawTexts();
+  });
+  // Click on the waveform: the passage starts on the nearest strong beat (or beat)
+  canvas.addEventListener('click', (e) => {
+    if (!beats) return;
+    const r = canvas.getBoundingClientRect();
+    const t = ((e.clientX - r.left) / r.width) * (beats.duration || 1);
+    const pool = (beats.strong?.length ? beats.strong.map((i) => beats.beats[i]) : beats.beats) ?? [];
+    const snap = pool.reduce((best, b) => (Math.abs(b - t) < Math.abs(best - t) ? b : best), pool[0] ?? t);
+    tpl.start_s = Math.round(snap * 1000) / 1000;
+    startIn.value = String(tpl.start_s);
+    touch();
+    draw();
+  });
+  playBtn.addEventListener('click', () => {
+    const p = passage();
+    audio.currentTime = p[0];
+    stopAt = Math.min(p.at(-1), p[0] + data.limits.maxDurationS);
+    audio.play().catch(() => {});
+  });
+
+  // --- recipe: sections
+  const recipeSel = h('select', { id: 'et-recipe' }, h('option', { value: '' }, 'Remplacer par une recette de départ…'), data.recipes.map((r) => h('option', { value: r.id }, r.label)));
+  const grade = h('select', { id: 'et-grade' }, Object.entries(data.grades).map(([k, v]) => h('option', { value: k, selected: k === tpl.recipe.grade }, v)));
+  const font = h('select', { id: 'et-font' }, data.fonts.map((f) => h('option', { value: f.id, selected: f.id === tpl.font }, f.label)));
+  grade.addEventListener('change', () => { tpl.recipe.grade = grade.value; touch(); });
+  font.addEventListener('change', () => { tpl.font = font.value; touch(); });
+  const sectionsBox = h('div');
+  const cutLabel = (c) => (c === 0.5 ? '½ temps' : `${c} temps`);
+  function drawSections() {
+    const secs = tpl.recipe.sections;
+    fill(sectionsBox,
+      secs.map((s, i) => {
+        const last = i === secs.length - 1;
+        const beatsIn = h('input', { class: 'text', type: 'number', min: last ? '0' : '1', max: String(data.limits.maxBeats), step: '1', value: String(s.beats), style: 'width:5rem', 'aria-label': `Section ${i + 1} : nombre de temps` });
+        beatsIn.addEventListener('input', () => { s.beats = Math.max(last ? 0 : 1, Math.round(Number(beatsIn.value) || 0)); touch(); });
+        const cut = h('select', { 'aria-label': `Section ${i + 1} : coupe tous les` }, data.limits.cutEvery.map((c) => h('option', { value: String(c), selected: c === s.cut_every }, cutLabel(c))));
+        cut.addEventListener('change', () => { s.cut_every = Number(cut.value); touch(); });
+        const share = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(Math.round(s.photo_share * 100)), 'aria-label': `Section ${i + 1} : part de photos` });
+        const shareOut = h('output', {}, `${Math.round(s.photo_share * 100)} %`);
+        share.addEventListener('input', () => { s.photo_share = Number(share.value) / 100; shareOut.textContent = `${share.value} %`; touch(); });
+        const fx = h('div', { class: 'ed-chips', role: 'group', 'aria-label': `Section ${i + 1} : effets, à tour de rôle à chaque coupe` },
+          Object.entries(data.effects).map(([k, label]) => {
+            const box = h('input', { type: 'checkbox', checked: s.effects.includes(k) });
+            box.addEventListener('change', () => {
+              s.effects = box.checked ? [...s.effects, k] : s.effects.filter((x) => x !== k);
+              touch();
+            });
+            return h('label', { class: 'check' }, box, ` ${label}`);
+          }));
+        const rm = h('button', { class: 'btn danger small', type: 'button', disabled: secs.length === 1 }, 'Retirer');
+        rm.addEventListener('click', () => {
+          secs.splice(i, 1);
+          secs[secs.length - 1].beats = 0;
+          touch();
+          drawSections();
+        });
+        return h('div', { class: 'ed-section' },
+          h('strong', {}, `Section ${i + 1}`),
+          h('div', { class: 'actions' },
+            h('label', {}, 'Durée ', beatsIn, last ? ' temps (0 = jusqu’à la fin)' : ' temps'),
+            h('label', {}, 'Coupe tous les ', cut),
+            h('label', {}, 'Photos ', share, ' ', shareOut), rm),
+          fx);
+      }),
+      h('button', { class: 'btn secondary small', type: 'button', disabled: secs.length >= data.limits.maxSections, onclick: () => {
+        if (secs[secs.length - 1].beats === 0) secs[secs.length - 1].beats = 8;
+        secs.push({ beats: 0, cut_every: 1, effects: ['punch'], photo_share: 0.25 });
+        touch();
+        drawSections();
+      } }, '+ Ajouter une section'));
+  }
+
+  // --- texts
+  const textsBox = h('div');
+  function drawTexts() {
+    const rows = Array.from({ length: data.limits.maxTexts }, (_, i) => tpl.texts[i] ?? { text: '', beat: i * 8 < tpl.length_beats ? i * 8 : 0 });
+    fill(textsBox, rows.map((t, i) => {
+      const text = h('input', { class: 'text', type: 'text', maxlength: String(data.limits.maxTextLen), value: t.text, placeholder: i === 0 ? 'Ex. : Il a osé le dire' : 'Facultatif', 'aria-label': `Texte ${i + 1}` });
+      const beat = h('input', { class: 'text', type: 'number', min: '0', max: String(tpl.length_beats - 1), step: '1', value: String(t.beat), style: 'width:5rem', 'aria-label': `Texte ${i + 1} : temps` });
+      const sync = () => {
+        rows[i] = { text: text.value, beat: Math.round(Number(beat.value) || 0) };
+        tpl.texts = rows.filter((x) => x.text.trim());
+        touch();
+      };
+      text.addEventListener('input', sync);
+      beat.addEventListener('input', sync);
+      return h('div', { class: 'actions' }, text, h('label', {}, 'au temps n° ', beat));
+    }));
+  }
+
+  // --- save, preview, publish
+  const save = h('button', { class: 'btn', type: 'button' }, 'Enregistrer');
+  const previewBtn = h('button', { class: 'btn secondary', type: 'button' }, 'Générer l’aperçu');
+  const onlineBtn = h('button', { class: 'btn secondary', type: 'button' });
+  const previewBox = h('div', { class: 'ed-preview' });
+  const drawState = () => {
+    onlineBtn.textContent = cur.enabled ? 'Retirer du site' : 'Mettre en ligne';
+    fill(previewBox, cur.has_preview
+      ? h('video', { src: `/api/admin/edit/templates/${cur.id}/preview.mp4?v=${encodeURIComponent(cur.preview_at)}`, controls: true, playsinline: '', preload: 'metadata' })
+      : h('p', { class: 'status' }, 'Pas encore d’aperçu : enregistre puis génère-le. C’est lui que verront les adhérents.'));
+  };
+  const doSave = async () => {
+    const r = await api('PUT', `/edit/templates/${cur.id}`, { template: tpl });
+    cur = r.template;
+    tpl = structuredClone(cur.template);
+    dirty = false;
+    drawState();
+  };
+  save.addEventListener('click', () => busy(save, async () => {
+    try {
+      await doSave();
+      status(note, 'Modèle enregistré.', 'ok');
+    } catch (e) {
+      fail(e, note);
+    }
+  }));
+  previewBtn.addEventListener('click', () => busy(previewBtn, async () => {
+    try {
+      if (dirty) await doSave();
+      let job = (await api('POST', `/edit/templates/${cur.id}/preview`, {})).job;
+      while (job.status === 'queued' || job.status === 'running') {
+        status(note, job.status === 'queued' ? `Aperçu en file d’attente (position ${job.position})…` : `Rendu de l’aperçu… ${Math.round(job.progress * 100)} %`);
+        await new Promise((r) => setTimeout(r, 1500));
+        if (gen !== routeGen) return;
+        job = await api('GET', `/edit/jobs/${job.id}`);
+      }
+      if (job.status !== 'done') throw new Error(job.error || 'Le rendu de l’aperçu a échoué.');
+      // The preview is kept once the job's follow-up has run: read the template again
+      for (let i = 0; i < 10; i++) {
+        cur = (await api('GET', '/edit')).templates.find((t) => t.id === cur.id) ?? cur;
+        if (cur.has_preview) break;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      drawState();
+      status(note, 'Aperçu prêt.', 'ok');
+    } catch (e) {
+      fail(e, note);
+    }
+  }));
+  onlineBtn.addEventListener('click', () => busy(onlineBtn, async () => {
+    try {
+      if (dirty) throw new Error('Enregistre d’abord tes réglages, puis génère l’aperçu.');
+      cur = (await api('PATCH', `/edit/templates/${cur.id}`, { enabled: !cur.enabled })).template;
+      drawState();
+      status(note, cur.enabled ? 'Modèle en ligne : les adhérents le voient.' : 'Modèle retiré du site.', 'ok');
+    } catch (e) {
+      fail(e, note);
+    }
+  }));
+  // Starting over from a recipe: its sections and grade replace the current ones
+  recipeSel.addEventListener('change', () => {
+    const r = data.recipes.find((x) => x.id === recipeSel.value);
+    recipeSel.value = '';
+    if (!r) return;
+    tpl.recipe = structuredClone({ grade: r.grade, sections: r.sections });
+    grade.value = tpl.recipe.grade;
+    touch();
+    drawSections();
+  });
+
+  cleanup = () => audio.pause();
+  drawSections();
+  drawTexts();
+  drawState();
+  fill($app,
+    h('p', {}, h('a', { href: '#/edit' }, '← Tous les modèles')),
+    h('section', { class: 'panel' },
+      h('h2', {}, cur.name),
+      h('div', { class: 'field' }, h('label', { for: 'et-name' }, 'Nom'), name),
+      h('div', { class: 'field' }, h('label', { for: 'et-track' }, 'Son'), track),
+      audio, info,
+      canvas,
+      h('p', { class: 'status' }, 'Clique sur la forme d’onde pour faire commencer le passage sur un temps fort (traits hauts). Les traits rouges sont les drops.'),
+      h('div', { class: 'actions' },
+        h('label', { for: 'et-start' }, 'Début (s) '), startIn,
+        h('label', { for: 'et-len' }, 'Longueur '), lenSel, lenInfo,
+        h('label', { for: 'et-bpm' }, 'Tempo imposé '), bpmIn,
+        playBtn)),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'Recette'),
+      h('p', { class: 'status' }, 'Chaque section dit tous les combien de temps on coupe, quels effets on pose (à tour de rôle, un par coupe ; un flash s’ajoute sur les temps forts s’il est coché) et la part de photos.'),
+      h('div', { class: 'actions' }, recipeSel, h('label', { for: 'et-grade' }, 'Étalonnage '), grade, h('label', { for: 'et-font' }, 'Police des textes '), font),
+      sectionsBox),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'Textes'),
+      h('p', { class: 'status' }, `Jusqu’à ${data.limits.maxTexts} phrases courtes, en grand à l’écran à partir du temps choisi (le premier temps du passage est le n° 0). Les adhérents pourront les changer.`),
+      textsBox),
+    h('section', { class: 'panel' },
+      h('h2', {}, 'Aperçu et mise en ligne'),
+      h('div', { class: 'actions' }, save, previewBtn, onlineBtn),
+      note,
+      previewBox),
+  );
+  loadTrack();
 }
 
 async function renderAgentKeys() {

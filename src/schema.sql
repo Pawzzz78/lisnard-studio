@@ -331,3 +331,35 @@ CREATE TABLE IF NOT EXISTS video_api_costs (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (video_id, feature, provider, model)
 );
+
+-- Section « Edit » : temps forts d'un morceau de la bibliothèque (tempo, grille des temps, temps forts, drops), liés à l'empreinte du fichier
+CREATE TABLE IF NOT EXISTS music_beats (
+  track_id   TEXT PRIMARY KEY,
+  stamp      TEXT NOT NULL,
+  data       JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Section « Edit » : photothèque de David Lisnard (fichiers dans <STORAGE_DIR>/edit/images) et modèles de montage créés par l'admin
+CREATE TABLE IF NOT EXISTS edit_images (
+  id         TEXT PRIMARY KEY,
+  title      TEXT NOT NULL DEFAULT '',
+  credit     TEXT NOT NULL DEFAULT '',
+  file       TEXT NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS edit_templates (
+  id         SERIAL PRIMARY KEY,
+  name       TEXT NOT NULL,
+  track_id   TEXT NOT NULL,
+  data       JSONB NOT NULL,
+  enabled    BOOLEAN NOT NULL DEFAULT FALSE,
+  position   INTEGER NOT NULL DEFAULT 0,
+  preview_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
