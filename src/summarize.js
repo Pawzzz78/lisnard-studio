@@ -165,11 +165,11 @@ export function sanitizeSummary(markdown, { labels = new Set(), timed = true } =
  * Résume les segments. Renvoie le Markdown nettoyé.
  * `complete` = fonction d'appel au modèle (injectable pour les tests).
  */
-export async function summarizeTranscript(segments, { complete = completeWithOpenRouter, model = summaryModel() } = {}) {
+export async function summarizeTranscript(segments, { complete = completeWithOpenRouter, model = summaryModel(), videoId = null } = {}) {
   const { text, labels, timed } = buildTranscriptText(segments);
   if (!text) throw new LlmError('Aucune transcription à résumer.', 'config');
   const call = (system, user, maxTokens) =>
-    complete({ model, system, user, maxTokens, feature: 'resumes' }, { maxAttempts: 3, timeoutMs: 120_000 });
+    complete({ model, system, user, maxTokens, feature: 'resumes', videoId }, { maxAttempts: 3, timeoutMs: 120_000 });
 
   let raw;
   if (text.length <= MAX_SINGLE_CHARS) {

@@ -20,7 +20,7 @@ import { musicAdminRouter } from './music-admin.js';
 import { cancelAnalysis } from '../studio/faces.js';
 import { studioStats } from '../studio/stats.js';
 import { syncRouter } from './sync-admin.js';
-import { usageReport } from '../usage.js';
+import { usageReport, videoCosts } from '../usage.js';
 import { retranscribeAdminRouter } from './retranscribe-admin.js';
 import { createKey, listKeys, revokeKey } from '../agent/keys.js';
 import { YouTubeApiError } from '../youtube.js';
@@ -72,6 +72,10 @@ adminRouter.use('/retranscribe', retranscribeAdminRouter); // retranscription à
 
 // Coûts des API, par tâche et par modèle
 adminRouter.get('/usage', ah(async (req, res) => res.json(await usageReport({ from: req.query.from, to: req.query.to }))));
+adminRouter.get('/videos/:id/costs', ah(async (req, res) => {
+  if (!/^\d{1,9}$/.test(req.params.id)) throw new HttpError(404, 'Vidéo introuvable.');
+  res.json(await videoCosts(Number(req.params.id)));
+}));
 
 // Clés API des agents IA
 adminRouter.get('/agent-keys', ah(async (_req, res) => res.json({ keys: await listKeys() })));

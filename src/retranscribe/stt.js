@@ -13,7 +13,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Transcrit un mp3 (Buffer). Renvoie { text, words: [{ word, start, end }] (secondes), segments, durationS }.
  * Réessaie sur 429 / 5xx ; sur 400, une fois sans les options facultatives (mots, termes clés) que le fournisseur peut refuser.
  */
-export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, model = STT_MODEL } = {}, { fetchImpl = fetch, retryDelayMs = 2000, timeoutMs = 120_000, maxAttempts = 3 } = {}) {
+export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, model = STT_MODEL, videoId = null } = {}, { fetchImpl = fetch, retryDelayMs = 2000, timeoutMs = 120_000, maxAttempts = 3 } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new LlmError("OPENROUTER_API_KEY n'est pas configurée.", 'config');
   let lean = false;
@@ -40,7 +40,7 @@ export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, m
       continue;
     }
     const json = await res.json().catch(() => ({}));
-    if (json.usage) await recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model, ...fromOpenRouter(json.usage) });
+    if (json.usage) await recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model, videoId, ...fromOpenRouter(json.usage) });
     const apiError = json.error ?? (res.ok ? null : { message: res.statusText });
     if (apiError) {
       const detail = apiError.message ?? JSON.stringify(apiError);
@@ -63,7 +63,7 @@ export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, m
       durationS: Number(json.duration ?? json.usage?.seconds) || null,
     };
   }
-  await recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model, error: true, calls: 0 });
+  await recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model, videoId, error: true, calls: 0 });
   throw lastError ?? new LlmError('Transcription impossible.');
 }
 

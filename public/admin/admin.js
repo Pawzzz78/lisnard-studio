@@ -5,6 +5,9 @@ const $nav = document.getElementById('nav');
 
 // ---------------------------------------------------------------- utilitaires
 
+/** replaceChildren that skips null / false / nested arrays, like h(): a bare null would print "null". */
+const fill = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter((k) => k != null && k !== false));
+
 function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -120,7 +123,7 @@ function toast(text, kind = 'ok', actionLabel, onAction) {
   toastEl ??= document.body.appendChild(h('div', { class: 'toast', role: 'status' }));
   clearTimeout(toastTimer);
   toastEl.className = `toast ${kind}`;
-  toastEl.replaceChildren(
+  fill(toastEl,
     text,
     actionLabel
       ? h('button', { type: 'button', class: 'btn secondary small', onclick: () => { toastEl.hidden = true; onAction(); } }, actionLabel)
@@ -258,7 +261,7 @@ async function route() {
     if (gen !== routeGen) return;
     if (!me.authenticated) return renderLogin();
     renderNav();
-    $app.replaceChildren(h('p', { class: 'status', role: 'status' }, 'Chargement…'));
+    fill($app, h('p', { class: 'status', role: 'status' }, 'Chargement…'));
     const m = location.hash.match(/^#\/video\/(\d+)/);
     if (m) await renderEditor(Number(m[1]));
     else if (location.hash === '#/sync') await renderSync();
@@ -279,7 +282,7 @@ async function route() {
   } catch (e) {
     if (gen !== routeGen) return;
     if (e instanceof AuthError) return renderLogin();
-    $app.replaceChildren(h('p', { class: 'status err', role: 'alert' }, e.message));
+    fill($app, h('p', { class: 'status err', role: 'alert' }, e.message));
   }
 }
 window.addEventListener('hashchange', route);
@@ -288,7 +291,7 @@ function renderNav() {
   const hash = location.hash;
   const here = hash === '' || hash === '#' || hash === '#/' || hash.startsWith('#/video/') ? '#/' : hash;
   const link = (href, label) => h('a', { href, 'aria-current': href === here ? 'page' : null }, label);
-  $nav.replaceChildren(
+  fill($nav,
     link('#/', 'Vidéos'),
     link('#/sync', 'Synchronisation'),
     link('#/studio', 'Stats studio'),
@@ -323,7 +326,7 @@ function renderNav() {
 
 function renderLogin() {
   resetPage();
-  $nav.replaceChildren();
+  fill($nav);
   const msg = h('p', { class: 'status', role: 'status' });
   const pw = h('input', { type: 'password', autocomplete: 'current-password', required: true, autofocus: true });
   const submit = h('button', { class: 'btn', type: 'submit' }, 'Se connecter');
@@ -348,7 +351,7 @@ function renderLogin() {
     submit,
     msg,
   );
-  $app.replaceChildren(form);
+  fill($app, form);
   pw.focus();
 }
 
@@ -419,7 +422,7 @@ async function renderList() {
       : h('p', { class: 'status' }, 'Aucune vidéo pour le moment. Ajoute-en une ci-dessous.'),
   );
 
-  $app.replaceChildren(addForm(config), list);
+  fill($app, addForm(config), list);
 }
 
 function addForm(config) {
@@ -524,7 +527,7 @@ async function renderStudioStats() {
     const rate = p.created ? Math.min(100, Math.round((got / p.created) * 100)) : null;
     const capped = p.created > 0 && got > p.created;
     switcher.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.p === current)));
-    grid.replaceChildren(
+    fill(grid,
       stat(p.created, plural(p.created, 'clip créé', 'clips créés'), 'Clips dont la création a été lancée'),
       stat(p.downloaded, plural(p.downloaded, 'clip téléchargé', 'clips téléchargés'), 'Clics sur « Télécharger » (un clip compte une fois)'),
       stat(p.shared, plural(p.shared, 'clip partagé', 'clips partagés'), 'Partages depuis le téléphone'),
@@ -544,7 +547,7 @@ async function renderStudioStats() {
       h('td', { class: 'bars' }, h('span', { class: 'bar a', style: `width:${(d.created / max) * 100}%` }), h('span', { class: 'bar b', style: `width:${((d.retrieved ?? d.downloaded + d.shared) / max) * 100}%` }))));
   const videoRows = st.videos.map((v) => h('tr', {}, h('td', {}, v.title || v.youtube_id), h('td', {}, String(v.created)), h('td', {}, String(v.retrieved ?? v.downloaded))));
 
-  $app.replaceChildren(
+  fill($app,
     h('section', { class: 'panel' },
       h('h2', {}, 'Studio TikTok / Reels'),
       h('p', { class: 'status' }, 'Combien de clips ont été créés, puis téléchargés ou partagés par les visiteurs.'),
@@ -696,7 +699,7 @@ async function renderMusicLibrary() {
             libTitle.textContent = `Ma bibliothèque (${data.library.length})`;
             if (!data.library.length) {
               libUl = null;
-              libBody.replaceChildren(emptyLib());
+              fill(libBody, emptyLib());
             }
           });
         } }, 'Supprimer')));
@@ -728,7 +731,7 @@ async function renderMusicLibrary() {
       else lines.push('Pas encore actualisé : le premier classement arrive dans les minutes qui suivent le démarrage du serveur.');
     }
     if (ts.last_error && (!ts.last_ok_at || ts.last_error_at > ts.last_ok_at)) lines.push(`Dernière tentative en échec : ${ts.last_error} (nouvel essai automatique dans quelques heures).`);
-    trendBox.replaceChildren(
+    fill(trendBox,
       h('h2', {}, `Tendances TikTok (${ts.live ?? 0})`),
       ...lines.map((l, i) => h('p', { class: i === 0 || !String(l).startsWith('Dernière tentative') ? 'status' : 'status err' }, l)),
       h('div', { class: 'actions' }, refreshBtn),
@@ -764,7 +767,7 @@ async function renderMusicLibrary() {
     libTitle = h('h2', {}, `Ma bibliothèque (${data.library.length})`);
     libUl = data.library.length ? h('ul', { class: 'mlist' }, data.library.map((t) => row(t, true))) : null;
     libBody = h('div', {}, libUl ?? emptyLib());
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Ajouter un morceau'),
         h('p', { class: 'status' }, `MP3, M4A, WAV, OGG ou FLAC, de ${data.limits.minS} s à ${fmtSpan(data.limits.maxS)}, ${Math.round(data.limits.maxBytes / 1048576)} Mo au maximum. Le morceau est converti en MP3 et son volume est égalisé pour que tous sonnent pareil sous la voix (seules les ${fmtSpan(data.limits.keepS)} du début sont conservées).`),
@@ -785,7 +788,7 @@ async function renderMusicLibrary() {
     );
   }
   draw();
-  $app.replaceChildren(h('section', { class: 'panel' }, h('h2', {}, 'Musiques du studio'), h('p', { class: 'status' }, 'Les morceaux ajoutés ici apparaissent dans l’onglet « Musique » du studio, rangés par catégorie (motivant, épique, cinématique).')), root);
+  fill($app, h('section', { class: 'panel' }, h('h2', {}, 'Musiques du studio'), h('p', { class: 'status' }, 'Les morceaux ajoutés ici apparaissent dans l’onglet « Musique » du studio, rangés par catégorie (motivant, épique, cinématique).')), root);
 }
 
 async function renderFaceReferences() {
@@ -820,7 +823,7 @@ async function renderFaceReferences() {
     const files = [...(input.files ?? [])];
     if (!files.length) return status(note, 'Choisis d’abord une ou plusieurs photos.', 'err');
     busy(sendBtn, async () => {
-    results.replaceChildren();
+    fill(results);
     try {
       for (const [i, f] of files.entries()) {
         status(note, `Analyse des photos… ${i + 1} / ${files.length} (environ une seconde par photo)`);
@@ -875,7 +878,7 @@ async function renderFaceReferences() {
 
   function draw() {
     const n = data.count;
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Reconnaissance de David Lisnard'),
         h('p', { class: 'status' }, 'Donne des photos de David Lisnard : dans les interviews où plusieurs personnes apparaissent (journaliste, public), le cadrage automatique du studio suivra lui plutôt que la personne la plus visible. Seules les empreintes des visages sont conservées, pas les photos.'),
@@ -902,7 +905,7 @@ async function renderFaceReferences() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderWallAdmin() {
@@ -974,7 +977,7 @@ async function renderWallAdmin() {
           h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('PATCH', `/wall/clips/${c.id}`, { hidden: !c.hidden }), c.hidden ? 'Clip rétabli.' : 'Clip masqué.') }, c.hidden ? 'Rétablir' : 'Masquer'),
           h('button', { class: 'btn secondary small', type: 'button', title: 'Masque tous les clips de cet auteur', onclick: go(() => api('PUT', `/wall/authors/${encodeURIComponent(c.author)}`, { hidden: !c.author_hidden }), c.author_hidden ? 'Auteur rétabli.' : 'Auteur masqué.') }, c.author_hidden ? 'Rétablir l’auteur' : 'Masquer l’auteur'))));
 
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Mur des clips'),
         h('p', { class: 'status' }, `Les TikToks publiés avec #${cfg.hashtag} sont récupérés avec Apify (acteur ${cfg.actor}), classés par vues, j’aime et commentaires (score = ${cfg.weights[0]} × vues + ${cfg.weights[1]} × j’aime + ${cfg.weights[2]} × commentaires), et les ${cfg.max} meilleurs sont affichés sur la page publique « Le mur ». `, h('a', { href: '/mur/', target: '_blank' }, 'Voir le mur')),
@@ -1000,7 +1003,7 @@ async function renderWallAdmin() {
     if (running) timer = setTimeout(reload, 3000);
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderUsage() {
@@ -1020,7 +1023,7 @@ async function renderUsage() {
     to.value = data.range.to;
     const t = data.totals;
     const maxDay = Math.max(0.0001, ...data.days.map((d) => d.cost_usd));
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Coûts API'),
         h('p', { class: 'status' }, 'Montants réels facturés, relevés à chaque appel (OpenRouter, Apify). Supadata (crédits) et les banques d’images (gratuites) sont comptés en appels, sans montant.'),
@@ -1062,7 +1065,7 @@ async function renderUsage() {
     );
   }
   await load();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderAgentKeys() {
@@ -1109,7 +1112,7 @@ async function renderAgentKeys() {
       });
     };
     const mcpConfig = JSON.stringify({ mcpServers: { 'lisnard-studio': { type: 'http', url: `${base}/api/agent/mcp`, headers: { Authorization: `Bearer ${fresh?.key ?? 'lsk_…'}` } } } }, null, 2);
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Agents IA'),
         h('p', { class: 'status' }, 'Une clé donne à un agent IA les mêmes possibilités qu’un visiteur du studio : choisir les extraits, personnaliser le clip (style, musique, zooms, images), le créer et télécharger le MP4. Aucun accès à l’admin.'),
@@ -1139,7 +1142,7 @@ async function renderAgentKeys() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 async function renderLibraryAdmin() {
@@ -1200,7 +1203,7 @@ async function renderLibraryAdmin() {
           c.file_state === 'active' ? h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('DELETE', `/library/clips/${c.id}/file`), 'Vidéo archivée.', 'Supprimer la vidéo de ce clip (les réglages restent) ?') }, 'Archiver la vidéo') : null,
           h('button', { class: 'btn secondary small', type: 'button', onclick: go(() => api('DELETE', `/library/clips/${c.id}`), 'Clip supprimé.', 'Supprimer définitivement ce clip ?') }, 'Supprimer'))));
     const filters = [['recent', 'Récents'], ['reported', `Signalés (${counts.reported})`], ['hidden', 'Masqués'], ['archived', 'Archivés']];
-    root.replaceChildren(
+    fill(root,
       h('section', { class: 'panel' },
         h('h2', {}, 'Bibliothèque de clips'),
         h('p', { class: 'status' }, 'Les clips publiés depuis le studio, publics ou privés. Publication directe : masque un clip ou un auteur pour le retirer de la page publique. ', h('a', { href: '/bibliotheque/', target: '_blank' }, 'Voir la bibliothèque')),
@@ -1217,7 +1220,7 @@ async function renderLibraryAdmin() {
     );
   }
   draw();
-  $app.replaceChildren(root);
+  fill($app, root);
 }
 
 /** Panneau « Retranscription (Grok + relecture) » de la page Synchronisation. */
@@ -1231,7 +1234,7 @@ async function retxPanelFill(panel, gen) {
       o = await api('GET', '/retranscribe/overview');
     } catch (e) {
       if (e instanceof AuthError) return renderLogin();
-      return panel.replaceChildren(h('h3', {}, 'Retranscription (Grok + relecture)'), h('p', { class: 'status err' }, e.message));
+      return fill(panel, h('h3', {}, 'Retranscription (Grok + relecture)'), h('p', { class: 'status err' }, e.message));
     }
     if (gen !== routeGen) return;
     const cap = h('input', { type: 'number', min: 0, max: 200, step: 1, value: o.settings.dailyHours, style: 'width:5rem', 'aria-label': 'Heures d’audio par jour' });
@@ -1254,7 +1257,7 @@ async function retxPanelFill(panel, gen) {
         fail(e, msg);
       }
     }));
-    panel.replaceChildren(...[
+    fill(panel, ...[
       h('h3', {}, 'Retranscription (Grok + relecture)'),
       h('p', { class: 'status' }, 'Les interviews sont retranscrites à partir du son (Grok STT), puis relues par Claude Haiku : orthographe, ponctuation, noms propres, « euh » retirés, sans jamais reformuler. L’ancienne transcription est sauvegardée et restaurable depuis la page de la vidéo. Les transcriptions corrigées à la main ou traduites ne sont jamais touchées.'),
       !o.configured ? h('p', { class: 'status err' }, 'Indisponible : la clé OpenRouter n’est pas configurée.') : null,
@@ -1588,7 +1591,7 @@ async function renderSync() {
 
   const retxPanel = h('section', { class: 'panel' });
   retxPanelFill(retxPanel, gen);
-  $app.replaceChildren(...[state, summariesPanel, filesPanel, retxPanel, channels, failed].filter(Boolean));
+  fill($app, ...[state, summariesPanel, filesPanel, retxPanel, channels, failed].filter(Boolean));
   cleanup(); // a re-render (timer, action) replaces the previous timer instead of adding one
 
   const sigOf = (x) =>
@@ -1629,6 +1632,24 @@ async function renderSync() {
 
 // ---------------------------------------------------------------------- éditeur
 
+const ICONS = {
+  cloud: ['M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z'],
+  laptop: ['M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16'],
+};
+function svgIcon(name) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(k, v);
+  for (const d of ICONS[name] ?? []) {
+    const path = document.createElementNS(NS, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+const usdFmt = (n) => `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: n > 0 && n < 0.1 ? 4 : 2 })} $`;
+
 async function renderEditor(id) {
   const gen = routeGen;
   const [{ video, segments, summary }, config, firstClipState] = await Promise.all([
@@ -1655,6 +1676,12 @@ async function renderEditor(id) {
     saveBtn.disabled = !dirty || saving;
     saveMsg.textContent = dirty ? 'Modifications non enregistrées' : 'À jour';
     saveMsg.className = `status${dirty ? '' : ' ok'}`;
+    // Unsaved text: flagged on the tab too, with words for screen readers
+    const tab = tabBtnByKey.transcription;
+    if (tab) {
+      tab.classList.toggle('unsaved', dirty);
+      tab.setAttribute('aria-label', dirty ? 'Transcription (modifications non enregistrées)' : 'Transcription');
+    }
   };
   const markDirty = () => {
     rev++;
@@ -1697,10 +1724,40 @@ async function renderEditor(id) {
       }
     }),
   );
+  // --- état de la vidéo, en un coup d'œil (mis à jour par les panneaux)
+  const statusStrip = h('div', { class: 'vstatus' });
+  let retxInfo = null;
+  let costTotal = null;
+  const tabBtnByKey = {}; // filled with the tab bar: a dot flags what needs attention
+  const SOURCE_LABEL = { supadata: 'sous-titres YouTube', whisper: 'Whisper (local)', grok: 'Grok + relecture', manual: 'collée à la main' };
+  function refreshStatus() {
+    const st = clipState;
+    const fileOk = Boolean(st?.file);
+    const hasText = segs.length > 0;
+    const enabled = Boolean(st?.enabled);
+    const visible = fileOk && enabled && hasText;
+    const why = !hasText ? 'pas de transcription' : !fileOk ? 'pas de fichier vidéo (onglet Clips)' : 'clips non autorisés (onglet Clips)';
+    const chip = (label, value, kind = '') => h('span', { class: `vchip ${kind}` }, h('span', { class: 'vchip-label' }, label), value);
+    tabBtnByKey.clips?.classList.toggle('attn', !visible);
+    tabBtnByKey.clips?.setAttribute('title', visible ? '' : `Invisible dans le studio : ${why}`);
+    tabBtnByKey.transcription?.classList.toggle('attn', !hasText);
+    const retx = retxInfo ? ({ done: 'faite', running: 'en cours…', retry: 'nouvelle tentative prévue', initial: 'échec, texte d’origine gardé', restored: 'ancienne restaurée', todo: 'à faire' }[retxInfo] ?? retxInfo) : null;
+    fill(statusStrip, ...[
+      chip('Studio', visible ? 'visible' : `invisible : ${why}`, visible ? 'ok' : 'warn'),
+      chip('Transcription', hasText ? `${SOURCE_LABEL[video.source] ?? video.source ?? '—'}${video.edited ? ', corrigée à la main' : ''}${video.translated ? ', traduite' : ''}` : 'aucune', hasText ? '' : 'warn'),
+      chip('Fichier', fileOk ? `${st.file.height ? `${st.file.height}p · ` : ''}${fmtDuration(Math.round(st.file.duration_s))}` : 'aucun', fileOk ? '' : 'warn'),
+      retx ? chip('Retranscription', retx, retxInfo === 'done' ? 'ok' : retxInfo === 'initial' ? 'warn' : '') : null,
+      chip('Résumé', { edited: 'corrigé', ready: 'prêt', waiting: 'en attente', failed: 'en échec', none: 'aucun' }[summary.status] ?? '—', summary.status === 'failed' ? 'warn' : ''),
+      costTotal != null ? chip('Coût API', usdFmt(costTotal)) : null,
+    ].filter(Boolean));
+  }
+
   const info = h(
     'section',
     { class: 'panel' },
     h('h2', {}, video.title || video.youtube_id),
+    statusStrip,
+    h('details', { class: 'vinfo' }, h('summary', {}, 'Infos de la vidéo (titre, chaîne, date, langue)'),
     h(
       'div',
       { class: 'row' },
@@ -1740,12 +1797,13 @@ async function renderEditor(id) {
             'Mettre à jour depuis YouTube',
           )
         : null,
-      h('a', { href: `https://www.youtube.com/watch?v=${video.youtube_id}`, target: '_blank', rel: 'noopener' }, 'Ouvrir sur YouTube ↗'),
-    ),
+    )),
+    h('p', { class: 'vlinks' }, h('a', { href: `https://www.youtube.com/watch?v=${video.youtube_id}`, target: '_blank', rel: 'noopener' }, 'Ouvrir sur YouTube ↗')),
   );
 
   // --- liste des segments
-  const list = h('div', { class: 'panel segs' });
+  const list = h('div', { class: 'segs' });
+  const txCount = h('span', { class: 'tx-count' });
   const rowEls = [];
 
   const autosize = (ta) => {
@@ -1755,7 +1813,7 @@ async function renderEditor(id) {
 
   function renderSegs() {
     rowEls.length = 0;
-    list.replaceChildren();
+    fill(list);
     if (!segs.length) list.append(h('p', { class: 'status' }, 'Aucun segment. Utilise « + » ou importe une transcription.'));
     segs.forEach((s, i) => {
       const ts = h('input', {
@@ -1854,6 +1912,7 @@ async function renderEditor(id) {
     });
     requestAnimationFrame(() => list.querySelectorAll('textarea.tseg-text').forEach(autosize));
     activeIdx = -1;
+    txCount.textContent = `${segs.length} ligne${segs.length > 1 ? 's' : ''}`;
   }
 
   // --- lecteur
@@ -1898,47 +1957,33 @@ async function renderEditor(id) {
     status(findMsg, `${n} occurrence${n > 1 ? 's' : ''}`);
   };
   findIn.addEventListener('input', countMatches);
-  const tools = h(
-    'section',
-    { class: 'panel' },
-    h('h3', {}, 'Chercher / remplacer'),
-    h('p', { class: 'status' }, 'Pratique pour corriger un nom propre mal reconnu (insensible à la casse).'),
-    findIn,
-    h('div', { style: 'height:.4rem' }),
-    replIn,
-    h(
-      'div',
-      { class: 'actions', style: 'margin-top:.6rem' },
-      h(
-        'button',
-        {
-          class: 'btn secondary small',
-          type: 'button',
-          onclick: () => {
-            if (!findIn.value) return;
-            const re = new RegExp(escapeRe(findIn.value), 'gi');
-            let n = 0;
-            for (const s of segs) {
-              const next = s.text.replace(re, () => (n++, replIn.value));
-              s.text = next;
-            }
-            if (n) {
-              markDirty();
-              renderSegs();
-            }
-            status(findMsg, `${n} remplacement${n > 1 ? 's' : ''}`, n ? 'ok' : '');
-          },
-        },
-        'Tout remplacer',
-      ),
-      findMsg,
-    ),
-  );
+  const replaceBtn = h('button', { class: 'btn secondary small', type: 'button' }, 'Tout remplacer');
+  replaceBtn.addEventListener('click', () => {
+    if (!findIn.value) return;
+    const re = new RegExp(escapeRe(findIn.value), 'gi');
+    let n = 0;
+    for (const s of segs) s.text = s.text.replace(re, () => (n++, replIn.value));
+    if (n) {
+      markDirty();
+      renderSegs();
+    }
+    status(findMsg, `${n} remplacement${n > 1 ? 's' : ''}`, n ? 'ok' : '');
+  });
+  const findRow = h('div', { class: 'tx-find', hidden: true }, findIn, replIn, replaceBtn, findMsg);
 
   // --- retranscription à partir du son (Grok + relecture)
   const retxMsg = h('p', { class: 'status', role: 'status' });
   const retxBody = h('div');
-  const retxPanel = h('section', { class: 'panel' }, h('h3', {}, 'Retranscription (Grok + relecture)'), retxBody, retxMsg);
+  const durS = video.duration_s ?? firstClipState?.file?.duration_s ?? null;
+  // Measured on a real interview: Grok ~0.10 $/h of audio + Haiku proofreading ~0.03 $/h
+  const retxItem = h(
+    'div',
+    { class: 'method' },
+    h('div', { class: 'method-head' }, h('strong', {}, 'Grok + relecture Claude Haiku'), h('span', { class: 'mtag rec' }, 'recommandé')),
+    h('p', { class: 'status' }, `Retranscrit à partir du son, corrige l’orthographe et les noms propres, retire les « euh ». Environ 0,13 $ par heure d’audio${durS ? `, soit environ ${Math.max(0.01, (durS / 3600) * 0.13).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $ pour cette vidéo` : ''}.`),
+    retxBody,
+    retxMsg,
+  );
   const RETX_LABEL = { todo: 'à faire', running: 'en cours…', retry: 'échec, nouvelle tentative prévue', done: 'faite', initial: 'échec : méthode initiale gardée', restored: 'ancienne transcription restaurée' };
   let retxTimer = 0;
   const prevRetxCleanup = cleanup;
@@ -1955,8 +2000,10 @@ async function renderEditor(id) {
       return fail(err, retxMsg);
     }
     const st = r.source === 'grok' && r.retx_status !== 'running' ? 'done' : (r.retx_status ?? 'todo');
+    retxInfo = st;
+    refreshStatus();
     const blocked = r.edited ? 'Transcription corrigée à la main : elle n’est jamais retranscrite.' : r.translated ? 'Transcription traduite : elle n’est pas retranscrite.' : !r.has_audio ? 'Pas de fichier vidéo avec du son.' : null;
-    const run = h('button', { class: 'btn secondary small', type: 'button', disabled: Boolean(blocked) || st === 'running' }, st === 'done' ? 'Retranscrire à nouveau' : 'Retranscrire maintenant');
+    const run = h('button', { class: 'btn small', type: 'button', disabled: Boolean(blocked) || st === 'running' }, st === 'done' ? 'Retranscrire à nouveau' : 'Retranscrire maintenant');
     run.addEventListener('click', (ev) => {
       if (dirty && !confirm('Tes modifications non enregistrées seront perdues. Continuer ?')) return;
       busy(ev.currentTarget, async () => {
@@ -1984,11 +2031,11 @@ async function renderEditor(id) {
         } }, 'Restaurer l’ancienne')
       : null;
     const s2 = r.retx_stats;
-    retxBody.replaceChildren(...[
+    fill(retxBody, ...[
       h('p', { class: 'status' }, `État : ${RETX_LABEL[st] ?? st}${r.retx_at ? ` (${new Date(r.retx_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })})` : ''}.`),
       st === 'done' && s2 ? h('p', { class: 'status' }, `${s2.lines} lignes, ${s2.changed} corrigées par la relecture, ${s2.rejected} corrections refusées par le garde-fou.`) : null,
       r.retx_error && st !== 'done' ? h('p', { class: 'status err' }, r.retx_error) : null,
-      blocked ? h('p', { class: 'status' }, blocked) : null,
+      blocked ? h('p', { class: 'status' }, blocked, !r.has_audio && !r.edited && !r.translated ? [' ', h('button', { class: 'linkish', type: 'button', onclick: () => showTab('clips') }, 'Déposer le fichier (onglet Clips & studio)')] : null) : null,
       h('div', { class: 'actions' }, run, restore),
     ].filter(Boolean));
     if (st === 'running') {
@@ -2001,19 +2048,18 @@ async function renderEditor(id) {
   }
   drawRetx();
 
-  // --- source de la transcription
-  const srcMsg = h('p', { class: 'status', role: 'status' });
-  const pasteArea = h('textarea', { class: 'text', rows: '6', placeholder: 'SRT, VTT, « [00:12] texte »…' });
-  const source = h(
-    'section',
-    { class: 'panel' },
-    h(
-      'details',
-      {},
-      h('summary', {}, 'Remplacer la transcription'),
-      h('p', { class: 'status' }, 'Écrase les segments actuels (modifications non enregistrées comprises).'),
-      config.supadata
-        ? h(
+  // --- autres sources : sous-titres YouTube (cloud, crédits Supadata) et texte collé (gratuit)
+  const supaMsg = h('p', { class: 'status', role: 'status' });
+  const supadataItem = config.supadata
+    ? h(
+        'div',
+        { class: 'method' },
+        h('div', { class: 'method-head' }, h('strong', {}, 'Sous-titres YouTube'), h('span', { class: 'mtag' }, 'Supadata · crédits')),
+        h('p', { class: 'status' }, 'Reprend les sous-titres publiés sur YouTube, souvent sans ponctuation. Remplace la transcription actuelle.'),
+        h(
+          'div',
+          { class: 'actions' },
+          h(
             'button',
             {
               class: 'btn secondary small',
@@ -2021,94 +2067,106 @@ async function renderEditor(id) {
               onclick: (ev) => {
                 if (!confirm(video.edited ? 'Tes corrections manuelles seront perdues. Continuer ?' : 'Récupérer à nouveau la transcription ?')) return;
                 busy(ev.currentTarget, async () => {
-                  status(srcMsg, 'Récupération…');
+                  status(supaMsg, 'Récupération…');
                   try {
                     await api('POST', `/videos/${id}/refetch`, { lang: f.lang.value || undefined });
                     dirty = false;
                     route();
                   } catch (err) {
-                    fail(err, srcMsg);
+                    fail(err, supaMsg);
                   }
                 });
               },
             },
-            'Récupérer via Supadata',
-          )
-        : null,
-      h('div', { style: 'height:.6rem' }),
-      pasteArea,
-      h(
-        'button',
-        {
-          class: 'btn secondary small',
-          type: 'button',
-          style: 'margin-top:.5rem',
-          onclick: (ev) => {
-            if (!pasteArea.value.trim() || !confirm('Remplacer toute la transcription par ce texte ?')) return;
-            busy(ev.currentTarget, async () => {
-              try {
-                await api('POST', `/videos/${id}/import`, { transcript: pasteArea.value });
-                dirty = false;
-                route();
-              } catch (err) {
-                fail(err, srcMsg);
-              }
-            });
-          },
-        },
-        'Importer le texte collé',
-      ),
-      srcMsg,
-    ),
-  );
+            'Récupérer les sous-titres',
+          ),
+        ),
+        supaMsg,
+      )
+    : null;
 
-
-  // --- traduction
-  const trMsg = h('p', { class: 'status', role: 'status' });
-  const translatable = Boolean(video.lang) && video.lang !== 'fr';
-  const translatePanel = h(
-    'section',
-    { class: 'panel' },
+  const pasteMsg = h('p', { class: 'status', role: 'status' });
+  const pasteArea = h('textarea', { class: 'text', rows: '6', placeholder: 'SRT, VTT, « [00:12] texte »…' });
+  const pasteItem = h(
+    'div',
+    { class: 'method' },
     h(
       'details',
-      { open: translatable || video.translated },
-      h('summary', {}, 'Langue et traduction'),
+      {},
+      h('summary', {}, h('strong', {}, 'Coller une transcription'), h('span', { class: 'mtag' }, 'SRT, VTT, texte horodaté')),
+      h('p', { class: 'status' }, 'Remplace toute la transcription actuelle, modifications non enregistrées comprises.'),
+      pasteArea,
       h(
-        'p',
-        { class: 'status' },
-        `Langue du texte affiché : ${video.lang ?? 'inconnue'}. `,
-        video.translated ? `Traduit automatiquement depuis « ${video.original_lang ?? '?'} » : le texte d’origine est conservé sous chaque segment. Sur le site, les résultats sont signalés comme traduction.` : '',
+        'div',
+        { class: 'actions' },
+        h(
+          'button',
+          {
+            class: 'btn secondary small',
+            type: 'button',
+            onclick: (ev) => {
+              if (!pasteArea.value.trim() || !confirm('Remplacer toute la transcription par ce texte ?')) return;
+              busy(ev.currentTarget, async () => {
+                try {
+                  await api('POST', `/videos/${id}/import`, { transcript: pasteArea.value });
+                  dirty = false;
+                  route();
+                } catch (err) {
+                  fail(err, pasteMsg);
+                }
+              });
+            },
+          },
+          'Importer le texte collé',
+        ),
       ),
-      translatable
-        ? config.translate
-          ? h(
-              'button',
-              {
-                class: 'btn secondary small',
-                type: 'button',
-                onclick: (ev) => {
-                  if (dirty) return status(trMsg, 'Enregistre d’abord tes modifications.', 'err');
-                  if (!confirm('Le texte affiché sera remplacé par une traduction automatique en français (le texte d’origine est conservé). Continuer ?')) return;
-                  busy(ev.currentTarget, async () => {
-                    status(trMsg, 'Traduction en cours… (une à deux minutes pour une longue vidéo)');
-                    try {
-                      await api('POST', `/videos/${id}/translate`, { lang: 'fr' });
-                      route();
-                    } catch (err) {
-                      fail(err, trMsg);
-                    }
-                  });
-                },
-              },
-              'Traduire en français',
-            )
-          : unavailable('la traduction automatique n’est pas configurée.', 'OPENROUTER_API_KEY')
-        : null,
-      trMsg,
     ),
+    pasteMsg,
   );
 
-
+  // --- traduction par l'IA (cloud) : seulement pour un texte dans une autre langue
+  const trMsg = h('p', { class: 'status', role: 'status' });
+  const translatable = Boolean(video.lang) && video.lang !== 'fr';
+  const translateItem =
+    translatable || video.translated
+      ? h(
+          'div',
+          { class: 'method' },
+          h('div', { class: 'method-head' }, h('strong', {}, 'Traduction en français'), h('span', { class: 'mtag' }, 'IA · OpenRouter')),
+          h(
+            'p',
+            { class: 'status' },
+            `Langue du texte affiché : ${video.lang ?? 'inconnue'}. `,
+            video.translated ? `Traduit automatiquement depuis « ${video.original_lang ?? '?'} » : le texte d’origine est conservé sous chaque ligne, et le site signale les résultats comme traduction.` : '',
+          ),
+          translatable
+            ? config.translate
+              ? h(
+                  'button',
+                  {
+                    class: 'btn secondary small',
+                    type: 'button',
+                    onclick: (ev) => {
+                      if (dirty) return status(trMsg, 'Enregistre d’abord tes modifications.', 'err');
+                      if (!confirm('Le texte affiché sera remplacé par une traduction automatique en français (le texte d’origine est conservé). Continuer ?')) return;
+                      busy(ev.currentTarget, async () => {
+                        status(trMsg, 'Traduction en cours… (une à deux minutes pour une longue vidéo)');
+                        try {
+                          await api('POST', `/videos/${id}/translate`, { lang: 'fr' });
+                          route();
+                        } catch (err) {
+                          fail(err, trMsg);
+                        }
+                      });
+                    },
+                  },
+                  'Traduire en français',
+                )
+              : unavailable('la traduction automatique n’est pas configurée.', 'OPENROUTER_API_KEY')
+            : null,
+          trMsg,
+        )
+      : null;
 
   // --- résumé IA (modifiable à la main)
   const sumMsg = h('p', { class: 'status', role: 'status' });
@@ -2148,7 +2206,7 @@ async function renderEditor(id) {
     { class: 'panel' },
     h(
       'details',
-      { open: summary.status === 'failed' || summary.status === 'edited' },
+      { open: true },
       h('summary', {}, `Résumé IA : ${{ edited: 'corrigé à la main', ready: 'prêt', waiting: 'en attente', failed: 'en échec', none: 'aucun' }[summary.status]}`),
       h('p', { class: summary.status === 'failed' ? 'status err' : 'status' }, sumText),
       summary.status === 'none'
@@ -2206,7 +2264,7 @@ async function renderEditor(id) {
   function drawFaces() {
     clearTimeout(facesTimer);
     const fc = clipState?.faces;
-    if (!clipState?.file || !fc || fc.status === 'off') return facesBox.replaceChildren();
+    if (!clipState?.file || !fc || fc.status === 'off') return fill(facesBox);
     const analysing = fc.status === 'queued' || fc.status === 'running';
     const phase = fc.phase === 'identify' ? 'Reconnaissance de David Lisnard' : fc.phase === 'rescue' ? 'Deuxième passe sur les visages difficiles' : 'Analyse';
     const id2 = fc.ident ?? { state: 'off' };
@@ -2247,7 +2305,7 @@ async function renderEditor(id) {
       });
       drawFaces();
     });
-    facesBox.replaceChildren(
+    fill(facesBox,
       h('h3', { class: 'clips-sub' }, 'Cadrage automatique sur le visage'),
       h('p', { class: `status${fc.status === 'failed' ? ' err' : ''}` }, text),
       fc.status === 'ready' && fc.summary?.share != null && (fc.summary.share < 0.5 || fc.summary.median_w < 0.04)
@@ -2328,7 +2386,7 @@ async function renderEditor(id) {
   function renderClips() {
     const st = clipState;
     if (!st) {
-      clipsPanel.replaceChildren(h('p', { class: 'status err' }, 'Le studio de clips est indisponible.'));
+      fill(clipsPanel, h('p', { class: 'status err' }, 'Le studio de clips est indisponible.'));
       return;
     }
     const f = st.file;
@@ -2442,11 +2500,14 @@ async function renderEditor(id) {
       );
     });
 
-    clipsPanel.replaceChildren(
+    fill(clipsPanel,
       h(
-        'details',
-        { open: Boolean(f) || Boolean(sg) },
-        h('summary', {}, `Clips TikTok : ${label}`),
+        'div',
+        { class: 'clips-grid' },
+        h(
+        'div',
+        { class: 'clips-col' },
+        h('h3', {}, 'Fichier vidéo et diffusion ', h('span', { class: `badge${st.enabled ? ' ok' : ''}` }, label)),
         st.ffmpeg ? null : unavailable('le dépôt de vidéos est impossible sur ce serveur.', 'ffmpeg absent'),
         st.ffmpeg && !st.render_ready ? unavailable('le studio ne pourra pas créer de clips (le serveur ne sait pas incruster les sous-titres ni encoder la vidéo).', 'ffmpeg sans sous-titres / H.264 ; voir les journaux de démarrage') : null,
         ...fileBlock,
@@ -2468,33 +2529,40 @@ async function renderEditor(id) {
         h('label', { class: 'switch-row' }, toggle, h('span', {}, 'Autoriser les clips pour le public')),
         h('p', { class: 'status' }, 'Les visiteurs pourront créer des TikToks à partir de cette vidéo. N’autorise que des vidéos dont tu peux diffuser des extraits.'),
         facesBox,
-        h('h3', { class: 'clips-sub' }, 'Extraits proposés par l’IA'),
+        ),
+        h(
+        'div',
+        { class: 'clips-col' },
+        h('h3', {}, 'Extraits proposés par l’IA'),
         sg?.outdated ? h('p', { class: 'status err' }, 'La transcription a changé depuis : régénère les extraits.') : null,
         cards.length ? h('div', { class: 'clip-list' }, cards) : st.llm ? h('p', { class: 'status' }, sg ? 'Aucun passage assez fort dans cette interview : l’IA n’en propose pas (note minimale de 7, salutations et remerciements écartés). Les visiteurs peuvent toujours choisir leur passage à la main dans la transcription.' : 'Pas encore d’extraits.') : unavailable('la proposition d’extraits par l’IA n’est pas configurée.', 'OPENROUTER_API_KEY'),
         h('div', { class: 'actions' }, suggestBtn),
         clipMsg,
+        ),
       ),
     );
     drawFaces();
+    refreshStatus();
   }
   renderClips();
 
-  // --- transcription locale (Whisper)
+  // --- transcription locale et gratuite (Whisper)
   const hasTranscript = segs.length > 0;
-  const whisperPanel = h(
-    'section',
-    { class: 'panel' },
+  const whisperItem = h(
+    'div',
+    { class: 'method' },
+    h('div', { class: 'method-head' }, h('strong', {}, 'Whisper'), h('span', { class: 'mtag' }, 'Python')),
+    h(
+      'p',
+      { class: 'status' },
+      hasTranscript
+        ? 'Transcrit l’audio sur ton ordinateur puis envoie le texte ici. La transcription actuelle n’est remplacée qu’avec --overwrite (ça écrase aussi tes corrections).'
+        : 'Transcrit l’audio sur ton ordinateur puis envoie le texte ici : il est enregistré directement, visible par tout le monde.',
+    ),
     h(
       'details',
       { open: !hasTranscript },
-      h('summary', {}, hasTranscript ? 'Refaire la transcription (Whisper)' : 'Transcrire avec Whisper (gratuit)'),
-      h(
-        'p',
-        { class: 'status' },
-        hasTranscript
-          ? 'Cette vidéo a déjà une transcription : elle ne sera pas remplacée sauf si tu ajoutes --overwrite à la commande (attention, ça écrase tes corrections).'
-          : 'Whisper tourne sur ton ordinateur (il ne peut pas tourner dans ce navigateur) : il télécharge l’audio, le transcrit, puis envoie le texte ici. Dès que c’est fini, la transcription est enregistrée dans la base : elle est visible par tout le monde (recherche, résumés) sans rien d’autre à faire.',
-      ),
+      h('summary', {}, 'Voir les étapes'),
       h(
         'ol',
         { class: 'steps' },
@@ -2502,11 +2570,7 @@ async function renderEditor(id) {
         h('li', {}, 'Lance cette commande (le mot de passe de l’admin est demandé) :'),
       ),
       commandBox(whisperCommand(video.youtube_id)),
-      h(
-        'ol',
-        { class: 'steps', start: '3' },
-        h('li', {}, 'Une fois terminé, recharge cette page.'),
-      ),
+      h('ol', { class: 'steps', start: '3' }, h('li', {}, 'Une fois terminé, recharge cette page.')),
       h('button', { class: 'btn secondary small', type: 'button', onclick: () => route() }, 'Recharger la page'),
     ),
   );
@@ -2514,6 +2578,8 @@ async function renderEditor(id) {
   const danger = h(
     'section',
     { class: 'panel' },
+    h('h3', {}, 'Supprimer la vidéo'),
+    h('p', { class: 'status' }, 'Supprime la vidéo et sa transcription. C’est définitif.'),
     h(
       'button',
       {
@@ -2542,7 +2608,7 @@ async function renderEditor(id) {
 
   // --- enregistrement
   const saveMsg = h('span', { class: 'status ok', role: 'status' }, 'À jour');
-  const saveBtn = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => save() }, 'Enregistrer (Ctrl+S)');
+  const saveBtn = h('button', { class: 'btn small', type: 'button', disabled: true, title: 'Ctrl+S', onclick: () => save() }, 'Enregistrer');
   const putSegments = (list) => api('PUT', `/videos/${id}/segments`, { segments: list });
   async function save() {
     if (!dirty || saving) return;
@@ -2579,21 +2645,176 @@ async function renderEditor(id) {
     }
   }
 
-  const savebar = h(
-    'div',
-    { class: 'savebar' },
-    h('span', {}, h('strong', {}, `${video.title || video.youtube_id}`), ' ', video.edited ? h('span', { class: 'badge ok' }, 'corrigée') : null),
-    h('label', { class: 'status' }, follow, ' Suivre la lecture'),
-    saveMsg,
-    saveBtn,
+
+  // --- coûts API de cette vidéo
+  const costsPanel = h('section', { class: 'panel' }, h('h3', {}, 'Coûts API de cette vidéo'), h('p', { class: 'status' }, 'Chargement…'));
+  async function loadCosts() {
+    try {
+      const c = await api('GET', `/videos/${id}/costs`);
+      if (pageLeft) return;
+      costTotal = c.total;
+      refreshStatus();
+      fill(costsPanel,
+        h('h3', {}, 'Coûts API de cette vidéo'),
+        h('p', { class: 'status' }, 'Montants réels facturés (OpenRouter), par tâche et par modèle, depuis la mise en place du suivi par vidéo. Les totaux de tout le site sont dans « Coûts API » du menu.'),
+        c.rows.length
+          ? h('table', { class: 'videos' },
+            h('thead', {}, h('tr', {}, ['Tâche', 'Modèle', 'Appels', 'Audio', 'Coût'].map((t) => h('th', {}, t)))),
+            h('tbody', {}, c.rows.map((r) => h('tr', {},
+              h('td', {}, r.label),
+              h('td', {}, h('code', {}, r.model || '—')),
+              h('td', { class: 'num' }, String(r.calls)),
+              h('td', { class: 'num' }, r.audio_seconds ? `${Math.round(r.audio_seconds / 60)} min` : '—'),
+              h('td', { class: 'num' }, usdFmt(r.cost_usd))))),
+            h('tfoot', {}, h('tr', {}, h('td', { colspan: 4 }, 'Total'), h('td', { class: 'num' }, usdFmt(c.total)))))
+          : h('p', { class: 'status' }, 'Aucun appel payant enregistré pour cette vidéo.'),
+      );
+    } catch (err) {
+      if (err instanceof AuthError) return renderLogin();
+      fill(costsPanel, h('h3', {}, 'Coûts API de cette vidéo'), h('p', { class: 'status err' }, err.message));
+    }
+  }
+  loadCosts();
+
+  // --- état replié / déplié des grands blocs, gardé d'une visite à l'autre
+  const foldOpen = (k, dflt) => {
+    try {
+      const v = localStorage.getItem(`admin-video-open-${k}`);
+      return v == null ? dflt : v === '1';
+    } catch {
+      return dflt;
+    }
+  };
+  const saveFold = (k, open) => {
+    try {
+      localStorage.setItem(`admin-video-open-${k}`, open ? '1' : '0');
+    } catch {}
+  };
+
+  // --- sources de la transcription : le cloud payant d'un côté, le gratuit de l'autre
+  const methodsCol = (kind, icon, title, tag, sub, items) =>
+    h(
+      'div',
+      { class: `methods-col ${kind}` },
+      h('div', { class: 'methods-col-head' }, h('span', { class: 'mico' }, svgIcon(icon)), h('div', {}, h('strong', {}, title, h('span', { class: `ptag ${kind}` }, tag)), h('span', {}, sub))),
+      items,
+    );
+  const sourcesCard = h(
+    'details',
+    { class: 'panel sources-card', open: foldOpen('sources', true) },
+    h(
+      'summary',
+      {},
+      h('span', { class: 'sc-title' }, 'Sources de la transcription'),
+      h('span', { class: 'sc-now' }, `Actuelle : ${hasTranscript ? `${SOURCE_LABEL[video.source] ?? video.source ?? '—'}${video.edited ? ', corrigée à la main' : ''}` : 'aucune'}`),
+    ),
+    h(
+      'div',
+      { class: 'methods' },
+      methodsCol('cloud', 'cloud', 'Dans le cloud', 'Payant', 'Automatique, facturé à l’usage', [retxItem, supadataItem, translateItem]),
+      methodsCol('local', 'laptop', 'Sur ton ordinateur', 'Gratuit', 'À lancer toi-même, ou à coller à la main', [whisperItem, pasteItem]),
+    ),
   );
+  sourcesCard.addEventListener('toggle', () => saveFold('sources', sourcesCard.open));
+
+  // --- texte de la transcription : en-tête toujours visible, repliable
+  const findToggle = h('button', { class: 'tx-btn toggle', type: 'button', 'aria-expanded': 'false' }, 'Chercher', h('span', { class: 'long' }, ' / remplacer'));
+  findToggle.addEventListener('click', () => {
+    findRow.hidden = !findRow.hidden;
+    findToggle.setAttribute('aria-expanded', String(!findRow.hidden));
+    if (!findRow.hidden) findIn.focus();
+  });
+  const followLabel = h('label', { class: 'tx-follow' }, follow, 'Suivre', h('span', { class: 'long' }, ' la lecture'));
+  const foldBtn = h('button', { class: 'tx-btn', type: 'button' });
+  let txOpen = foldOpen('text', true);
+  function setTxOpen(open) {
+    txOpen = open;
+    list.hidden = !open;
+    findToggle.hidden = !open;
+    followLabel.hidden = !open;
+    if (!open) {
+      findRow.hidden = true;
+      findToggle.setAttribute('aria-expanded', 'false');
+    }
+    foldBtn.textContent = open ? 'Replier' : 'Déplier';
+    foldBtn.setAttribute('aria-expanded', String(open));
+    saveFold('text', open);
+  }
+  foldBtn.addEventListener('click', () => setTxOpen(!txOpen));
+  const txCard = h(
+    'section',
+    { class: 'panel tx-card' },
+    h(
+      'div',
+      { class: 'tx-head' },
+      h('div', { class: 'tx-title' }, h('h3', {}, 'Texte de la transcription'), txCount),
+      h('div', { class: 'tx-actions' }, findToggle, followLabel, foldBtn),
+      h('div', { class: 'tx-save' }, saveMsg, saveBtn),
+    ),
+    findRow,
+    list,
+  );
+  setTxOpen(txOpen);
+  const legend = h(
+    'div',
+    { class: 'panel tx-legend' },
+    h('h3', {}, 'Raccourcis'),
+    h(
+      'ul',
+      {},
+      [['▶', 'écouter à partir de la ligne'], ['✂', 'couper la ligne au curseur'], ['⤵', 'fusionner avec la suivante'], ['＋', 'insérer une ligne dessous'], ['✕', 'supprimer la ligne'], ['Ctrl+S', 'enregistrer']].map(([k, t]) => h('li', {}, h('kbd', {}, k), t)),
+    ),
+  );
+  const vedit = h('div', { class: 'vedit' }, h('div', { class: 'vedit-side' }, playerBox, legend), txCard);
+
+  // --- onglets : un sujet par onglet ; la longue liste de lignes n'apparaît que dans « Transcription »
+  const TABS = [
+    ['transcription', 'Transcription', [sourcesCard, vedit]],
+    ['clips', 'Clips & studio', [clipsPanel]],
+    ['resume', 'Résumé', [summaryPanel]],
+    ['couts', 'Coûts API', [costsPanel]],
+    ['avance', 'Avancé', [danger]],
+  ];
+  let tabKey = 'transcription';
+  try {
+    tabKey = localStorage.getItem('admin-video-tab') || tabKey;
+  } catch {}
+  if (!TABS.some(([k]) => k === tabKey)) tabKey = 'transcription';
+  const tabBodies = Object.fromEntries(TABS.map(([k, , panels]) => [k, h('div', { class: 'vtab-body', role: 'tabpanel', id: `vtab-${k}`, 'aria-labelledby': `vtab-btn-${k}` }, panels)]));
+  const tabBtns = TABS.map(([k, label]) => h('button', { type: 'button', role: 'tab', class: 'vtab', id: `vtab-btn-${k}`, 'aria-controls': `vtab-${k}`, onclick: () => showTab(k) }, label));
+  TABS.forEach(([k], i) => (tabBtnByKey[k] = tabBtns[i]));
+  function showTab(k) {
+    tabKey = k;
+    TABS.forEach(([key], i) => {
+      tabBtns[i].setAttribute('aria-selected', String(key === k));
+      tabBtns[i].tabIndex = key === k ? 0 : -1;
+      tabBodies[key].hidden = key !== k;
+    });
+    if (k === 'couts') loadCosts();
+    try {
+      localStorage.setItem('admin-video-tab', k);
+    } catch {}
+  }
+  const tabBar = h('div', { class: 'vtabs', role: 'tablist', 'aria-label': 'Sections de la vidéo' }, tabBtns);
+  // Arrow keys move between tabs (WAI-ARIA tabs pattern)
+  tabBar.addEventListener('keydown', (e) => {
+    const i = TABS.findIndex(([k]) => k === tabKey);
+    const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
+    if (next == null) return;
+    e.preventDefault();
+    const k = TABS[(next + TABS.length) % TABS.length][0];
+    showTab(k);
+    tabBtnByKey[k].focus();
+  });
+  showTab(tabKey);
 
   renderSegs();
-  $app.replaceChildren(
+  refreshStatus();
+  fill($app,
     h('p', {}, h('a', { href: '#/' }, '← Toutes les vidéos')),
     info,
-    h('div', { class: 'editor' }, h('aside', { class: 'side' }, playerBox, summaryPanel, clipsPanel, whisperPanel, retxPanel, translatePanel, tools, source, danger), list),
-    savebar,
+    tabBar,
+    Object.values(tabBodies),
   );
 
   const facesCleanup = cleanup; // set with the faces panel: stops its polling

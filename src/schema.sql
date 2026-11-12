@@ -313,3 +313,21 @@ CREATE TABLE IF NOT EXISTS transcript_backups (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS transcript_backups_video_idx ON transcript_backups (video_id, id DESC);
+
+-- Description YouTube d'une vidéo (contexte de la retranscription : noms d'émission, d'invités…)
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- Coût API par vidéo (retranscription, extraits, résumé…), pour la page de la vidéo dans l'admin
+CREATE TABLE IF NOT EXISTS video_api_costs (
+  video_id      INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  feature       TEXT NOT NULL,
+  provider      TEXT NOT NULL,
+  model         TEXT NOT NULL DEFAULT '',
+  calls         INTEGER NOT NULL DEFAULT 0,
+  input_tokens  BIGINT NOT NULL DEFAULT 0,
+  output_tokens BIGINT NOT NULL DEFAULT 0,
+  audio_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+  cost_usd      DOUBLE PRECISION NOT NULL DEFAULT 0,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (video_id, feature, provider, model)
+);

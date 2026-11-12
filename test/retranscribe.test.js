@@ -257,3 +257,70 @@ test('jamais deux retranscriptions de la même vidéo en même temps', { skip: !
   release();
   assert.equal((await first).status, 'done');
 });
+
+test('contexte : noms tirés du titre et de la description (sigles, noms à majuscules, hashtags), sans doublon', async () => {
+  const { contextTerms } = await import('../src/retranscribe/context.js');
+  const t = contextTerms({ title: 'DLIVE', description: 'Ce soir, DLIVE avec Bruno Retailleau. Rejoignez Nouvelle Énergie ! #Lisnard2027 https://x.com/AbC' });
+  for (const x of ['DLIVE', 'Bruno Retailleau', 'Lisnard2027', 'Lisnard']) assert.ok(t.includes(x), x);
+  assert.ok(!t.includes('Rejoignez') && !t.includes('Ce'));
+  assert.equal(t.filter((x) => x === 'Nouvelle Énergie').length, 1);
+});
+
+test('garde-fou avec contexte : « Day Live » → « DLIVE » et « Tailleux » → « Retailleau » acceptés ; sans contexte ou avec ajout, refusés', () => {
+  const T = ['DLIVE', 'Bruno Retailleau'];
+  assert.ok(faithful('bienvenue pour ces Day Live', 'bienvenue pour ce DLIVE', T));
+  assert.ok(faithful('des Bruno Tailleux', 'des Bruno Retailleau', T));
+  assert.ok(!faithful('bienvenue pour ces Day Live', 'bienvenue pour ce DLIVE'));
+  assert.ok(!faithful('pour ces Day Live ce soir', 'pour ce DLIVE', T));
+  assert.ok(!faithful('il faut baisser', 'il faut augmenter', T));
+});
+
+test('retranscription : titre et description donnés à Grok et à Haiku ; description récupérée une fois ; coûts comptés par vidéo', { skip: !enabled }, async () => {
+  const id = await makeVideo('RETXtestCtx'); // 11 characters: a valid file name
+  await pool.query("UPDATE videos SET title = 'DLIVE' WHERE id = $1", [id]);
+  let described = 0;
+  const seen = {};
+  const deps = {
+    describe: async () => ((described++), 'Le DLIVE avec Bruno Retailleau'),
+    silencesOf: async () => [],
+    chunkAudio: async () => Buffer.from('x'),
+    transcribe: async (_b, o) => ((seen.stt = o), { text: 'x', words: [{ word: 'Bonsoir.', start: 0, end: 1 }], segments: [] }),
+    proofread: async (lines, o) => ((seen.pr = o), { lines, changed: 0, rejected: 0, failedBatches: 0, batches: 1 }),
+    suggest: async () => {},
+  };
+  const v = (await pool.query('SELECT * FROM videos WHERE id = $1', [id])).rows[0];
+  await R.buildTranscript(v, deps);
+  assert.ok(seen.stt.keyterms.includes('DLIVE') && seen.stt.keyterms.includes('Bruno Retailleau'));
+  assert.equal(seen.stt.videoId, id);
+  assert.deepEqual(seen.pr.context, { title: 'DLIVE', description: 'Le DLIVE avec Bruno Retailleau' });
+  assert.equal((await pool.query('SELECT description FROM videos WHERE id = $1', [id])).rows[0].description, 'Le DLIVE avec Bruno Retailleau');
+  await R.buildTranscript((await pool.query('SELECT * FROM videos WHERE id = $1', [id])).rows[0], deps);
+  assert.equal(described, 1);
+
+  await U.recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model: 'x-ai/grok-stt-1.0', videoId: id, audioSeconds: 60, cost: 0.002 });
+  await U.recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model: 'x-ai/grok-stt-1.0', videoId: id, audioSeconds: 60, cost: 0.002 });
+  await U.recordUsage({ feature: 'retranscription_relecture', provider: 'openrouter', model: 'anthropic/claude-haiku-5.5', videoId: id, cost: 0.001 });
+  await U.recordUsage({ feature: 'retranscription_stt', provider: 'openrouter', model: 'm', videoId: 999999999, cost: 1 });
+  const c = await U.videoCosts(id);
+  assert.equal(c.rows.length, 2);
+  assert.equal(c.rows[0].calls, 2);
+  assert.equal(c.rows[0].audio_seconds, 120);
+  assert.ok(Math.abs(c.total - 0.005) < 1e-9);
+});
+
+test('description introuvable (YouTube bloque le serveur) : rien n’est gardé, nouvel essai la fois suivante', { skip: !enabled }, async () => {
+  const id = await makeVideo('RETXtestDsc');
+  let asked = 0;
+  const deps = {
+    describe: async () => ((asked++), null),
+    silencesOf: async () => [],
+    chunkAudio: async () => Buffer.from('x'),
+    transcribe: async () => ({ text: 'x', words: [{ word: 'Bonsoir.', start: 0, end: 1 }], segments: [] }),
+    proofread: async (lines) => ({ lines, changed: 0, rejected: 0, failedBatches: 0, batches: 1 }),
+  };
+  const v = async () => (await pool.query('SELECT * FROM videos WHERE id = $1', [id])).rows[0];
+  await R.buildTranscript(await v(), deps);
+  assert.equal((await v()).description, null);
+  await R.buildTranscript(await v(), deps);
+  assert.equal(asked, 2);
+});

@@ -31,7 +31,7 @@ export function generateSummary(video, { complete = completeWithOpenRouter, forc
   const promise = (async () => {
     const { rows: segments } = await pool.query('SELECT start_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [video.id]);
     const model = summaryModel();
-    const markdown = await summarizeTranscript(segments, { complete, model });
+    const markdown = await summarizeTranscript(segments, { complete, model, videoId: video.id });
     const { rows } = await pool.query(
       `INSERT INTO video_summaries (video_id, content, model, source_hash)
        VALUES ($1, $2, $3, $4)

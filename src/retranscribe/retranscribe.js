@@ -13,6 +13,7 @@ import { llmConfigured } from '../openrouter.js';
 import { getSetting, setSetting } from '../settings.js';
 import { videoSilences } from '../studio/voice.js';
 import { audioChunk, planChunks } from './audio.js';
+import { contextTerms, fetchDescription } from './context.js';
 import { proofreadLines } from './proofread.js';
 import { segmentsToLines, transcribeChunk, wordsToLines } from './stt.js';
 
@@ -48,7 +49,19 @@ async function secondsToday() {
 }
 
 /** Texte de la transcription « méthode Grok », sans écrire en base. */
-export async function buildTranscript(video, { transcribe = transcribeChunk, chunkAudio = audioChunk, proofread = proofreadLines, silencesOf = videoSilences } = {}) {
+/** Description YouTube de la vidéo : lue en base, sinon récupérée une fois et gardée. */
+async function descriptionOf(video, describe) {
+  if (video.description != null) return video.description;
+  const text = await describe(video.youtube_id);
+  if (text == null) return ''; // fetch failed (YouTube often blocks servers): try again next time, store nothing
+  await pool.query('UPDATE videos SET description = $2 WHERE id = $1', [video.id, text]);
+  return text;
+}
+
+export async function buildTranscript(video, { transcribe = transcribeChunk, chunkAudio = audioChunk, proofread = proofreadLines, silencesOf = videoSilences, describe = fetchDescription } = {}) {
+  // Title and description name the show, the guests and the topics: Grok spells them right, Haiku may restore them
+  const context = { title: video.title ?? '', description: await descriptionOf(video, describe) };
+  const terms = contextTerms(context);
   const file = videoFilePath(video.file_name);
   const silences = (await silencesOf({ id: video.id, stamp: stampOf(video), file, hasAudio: video.file_has_audio })) ?? [];
   const chunks = planChunks(video.file_duration_s, silences);
@@ -56,14 +69,14 @@ export async function buildTranscript(video, { transcribe = transcribeChunk, chu
   const lines = [];
   for (const [start, end] of chunks) {
     const buf = await chunkAudio(file, start, end);
-    const r = await transcribe(buf, { lang: (video.original_lang || video.lang || 'fr').slice(0, 2) });
+    const r = await transcribe(buf, { lang: (video.original_lang || video.lang || 'fr').slice(0, 2), keyterms: terms, videoId: video.id });
     const offset = Math.round(start * 1000);
     const part = r.words.length ? wordsToLines(r.words, offset) : segmentsToLines(r.segments, offset);
     if (!part.length && r.text.trim()) throw new Error('La transcription est revenue sans horaires : impossible de caler les sous-titres.');
     lines.push(...part);
   }
   if (!lines.length) throw new Error('Aucune parole reconnue dans la vidéo.');
-  const pr = await proofread(lines);
+  const pr = await proofread(lines, { terms, context, videoId: video.id });
   if (pr.batches && pr.failedBatches === pr.batches) throw new Error('La relecture n’a pas pu se faire.');
   if (pr.rejected > lines.length * RETX.maxRejectedShare) throw new Error(`La relecture a proposé trop de changements refusés (${pr.rejected} lignes) : texte non fiable.`);
   return { lines: pr.lines, stats: { chunks: chunks.length, lines: pr.lines.length, changed: pr.changed, rejected: pr.rejected, failedBatches: pr.failedBatches } };
@@ -71,7 +84,7 @@ export async function buildTranscript(video, { transcribe = transcribeChunk, chu
 
 async function loadVideo(id) {
   const { rows } = await pool.query(
-    `SELECT id, youtube_id, title, lang, original_lang, translated, edited, source, text_hash, file_name, file_size, file_duration_s, file_has_audio,
+    `SELECT id, youtube_id, title, description, lang, original_lang, translated, edited, source, text_hash, file_name, file_size, file_duration_s, file_has_audio,
             file_uploaded_at, retx_status, retx_attempts FROM videos WHERE id = $1`,
     [id],
   );

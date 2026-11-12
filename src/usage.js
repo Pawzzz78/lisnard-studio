@@ -21,7 +21,7 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
  * Ajoute un appel au compteur du jour. Ne lève jamais : un souci de comptage ne doit pas casser l'appel d'origine.
  * `cost` : coût réel en dollars quand le fournisseur le donne (null sinon : l'appel est compté sans montant).
  */
-export async function recordUsage({ feature = 'autre', provider, model = '', calls = 1, error = false, inputTokens = 0, outputTokens = 0, audioSeconds = 0, cost = null }) {
+export async function recordUsage({ feature = 'autre', provider, model = '', videoId = null, calls = 1, error = false, inputTokens = 0, outputTokens = 0, audioSeconds = 0, cost = null }) {
   if (!process.env.DATABASE_URL) return; // unit tests without a database
   try {
     await pool.query(
@@ -34,9 +34,31 @@ export async function recordUsage({ feature = 'autre', provider, model = '', cal
          priced_calls = api_usage.priced_calls + EXCLUDED.priced_calls`,
       [String(feature).slice(0, 40), String(provider).slice(0, 40), String(model ?? '').slice(0, 120), error ? 1 : 0, Math.round(num(inputTokens)), Math.round(num(outputTokens)), num(audioSeconds), num(cost), cost == null ? 0 : 1, calls],
     );
+    if (Number.isInteger(Number(videoId)) && Number(videoId) > 0 && calls > 0) {
+      await pool.query(
+        `INSERT INTO video_api_costs (video_id, feature, provider, model, calls, input_tokens, output_tokens, audio_seconds, cost_usd)
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9 WHERE EXISTS (SELECT 1 FROM videos WHERE id = $1)
+         ON CONFLICT (video_id, feature, provider, model) DO UPDATE SET
+           calls = video_api_costs.calls + EXCLUDED.calls, input_tokens = video_api_costs.input_tokens + EXCLUDED.input_tokens,
+           output_tokens = video_api_costs.output_tokens + EXCLUDED.output_tokens, audio_seconds = video_api_costs.audio_seconds + EXCLUDED.audio_seconds,
+           cost_usd = video_api_costs.cost_usd + EXCLUDED.cost_usd, updated_at = now()`,
+        [Number(videoId), String(feature).slice(0, 40), String(provider).slice(0, 40), String(model ?? '').slice(0, 120), calls, Math.round(num(inputTokens)), Math.round(num(outputTokens)), num(audioSeconds), num(cost)],
+      );
+    }
   } catch (e) {
     console.error('Suivi des coûts API :', e.message);
   }
+}
+
+/** Coûts API d'une vidéo, par tâche et par modèle (depuis la mise en place du suivi par vidéo). */
+export async function videoCosts(videoId) {
+  const { rows } = await pool.query(
+    `SELECT feature, provider, model, calls, input_tokens::bigint AS input_tokens, output_tokens::bigint AS output_tokens, audio_seconds, cost_usd, updated_at
+     FROM video_api_costs WHERE video_id = $1 ORDER BY cost_usd DESC`,
+    [videoId],
+  );
+  const list = rows.map((r) => ({ ...r, label: FEATURES[r.feature] ?? r.feature, input_tokens: Number(r.input_tokens), output_tokens: Number(r.output_tokens) }));
+  return { rows: list, total: list.reduce((s, r) => s + r.cost_usd, 0) };
 }
 
 /** Usage OpenRouter (chat ou transcription) → champs de recordUsage. */

@@ -168,6 +168,25 @@ const linesFor = (segs, [from, to]) =>
 
 const cleanText = (v, max) => String(v ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 
+/**
+ * Texte raccourci sans jamais couper une idée en plein milieu : entier s'il tient, sinon coupé à la dernière fin de phrase
+ * (si elle garde au moins la moitié du texte), sinon au dernier mot entier suivi de « … ».
+ */
+export function cutAtSentence(v, max) {
+  const t = cleanText(v, 100_000);
+  if (t.length <= max) return t;
+  const head = t.slice(0, max + 1);
+  // Sentence ends, but not abbreviations: "M. Macron", "Mme. X", "Dr. Y" are mid-sentence
+  let end = -1;
+  for (const m of head.matchAll(/[.!?…](?=\s)/g)) {
+    const before = head.slice(0, m.index).split(/\s+/).pop();
+    if (m[0] === '.' && (/^\p{Lu}$/u.test(before) || /^(?:mme|mlle|dr|me|st|ste|cf|etc|av|bd|p|n°)$/i.test(before))) continue;
+    end = m.index;
+  }
+  if (end >= max / 2) return head.slice(0, end + 1).trim();
+  return `${head.slice(0, max - 1).replace(/\s+\S*$/, '').replace(/[\s,;:–-]+$/, '')}…`;
+}
+
 /** Extrait l'objet JSON de la réponse du modèle (tolère les balises ``` et le texte autour). */
 export function parseClipJson(raw) {
   const text = String(raw ?? '').replace(/```(?:json)?/gi, '');
@@ -187,13 +206,13 @@ const DEFAULT_TAGS = ['#lisnard', '#politique'];
  * Légende TikTok prête à copier-coller : texte court + 2 à 4 hashtags valides (lettres, chiffres, _), sans doublon. Ce que renvoie
  * le modèle est nettoyé (HTML, retours à la ligne, hashtags dans le texte, liens) ; s'il manque des hashtags, on complète.
  */
-export function buildCaption(rawDescription, rawHashtags, title) {
+export function buildCaption(rawDescription, rawHashtags, title, { maxText = 200 } = {}) {
   const tagOf = (t) => {
     const w = String(t ?? '').replace(/^#+/, '').normalize('NFC').replace(/[^\p{L}\p{N}_]/gu, '').slice(0, 30);
     return w.length >= 2 ? `#${w}` : null;
   };
   const fromText = [...String(rawDescription ?? '').matchAll(/#[\p{L}\p{N}_]+/gu)].map((m) => m[0]);
-  const body = cleanText(String(rawDescription ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/https?:\/\/\S+/g, ''), 200);
+  const body = cutAtSentence(String(rawDescription ?? '').replace(/#[\p{L}\p{N}_]+/gu, '').replace(/https?:\/\/\S+/g, ''), maxText);
   const seen = new Set();
   const tags = [];
   const add = (t) => {
@@ -251,7 +270,7 @@ export function mergeClips(clips, max = CLIP_LIMITS.maxSuggestions) {
  * Demande des extraits au modèle pour une liste de segments. `complete` est injectable pour les tests ; `stats` (facultatif) reçoit
  * { proposed, valid, junk } : ce que le modèle a proposé, ce qui avait des horaires et une durée valides, et la part écartée comme creuse.
  */
-export async function suggestClipsFor(rows, { complete = completeWithOpenRouter, model = clipModel(), stats = {} } = {}) {
+export async function suggestClipsFor(rows, { complete = completeWithOpenRouter, model = clipModel(), stats = {}, videoId = null } = {}) {
   const coarse = prepareSegments(rows);
   if (coarse.length < 3) throw new HttpError(409, 'Transcription trop courte pour proposer des extraits.');
   const segs = refineSegments(coarse); // gros morceaux : découpés en phrases pour pouvoir choisir des tranches plus fines
@@ -261,7 +280,7 @@ export async function suggestClipsFor(rows, { complete = completeWithOpenRouter,
   Object.assign(stats, { proposed: 0, valid: 0, junk: 0 });
   await forEachLimit(windows.length, 3, async (w) => {
     const win = windows[w];
-    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000, feature: 'extraits' }, { maxAttempts: 3, timeoutMs: 120_000 });
+    const raw = await complete({ model, system: systemPrompt(CLIP_LIMITS.maxSuggestions), user: linesFor(segs, win), maxTokens: 6000, feature: 'extraits', videoId }, { maxAttempts: 3, timeoutMs: 120_000 });
     for (const c of parseClipJson(raw)) {
       stats.proposed++;
       const clip = buildClip(c, segs, win);
@@ -282,7 +301,7 @@ export async function generateClipSuggestions(videoId, deps = {}) {
   const { rows } = await pool.query('SELECT start_ms, duration_ms, text FROM segments WHERE video_id = $1 ORDER BY position', [videoId]);
   const model = deps.model ?? clipModel();
   const stats = {};
-  const clips = await suggestClipsFor(rows, { ...deps, model, stats });
+  const clips = await suggestClipsFor(rows, { ...deps, model, stats, videoId });
   // le modèle a répondu mais rien n'a de durée ou d'horaires valides : problème technique, on réessaie. Une liste vide parce que rien
   // n'est assez fort (ou que tout était creux) est un résultat normal : on la garde, pour ne pas relancer le modèle à chaque fois.
   if (!clips.length && stats.proposed > 0 && stats.valid === 0) throw new LlmError("Le modèle n'a proposé aucun extrait utilisable : réessaie.");
@@ -337,7 +356,8 @@ export function playClipsFrom(quotes, rows = []) {
       duration_s: Math.round((end - start) / 100) / 10,
       title,
       why: 'Citation repérée sur Lisnard Play.',
-      description: buildCaption(`« ${cleanText(text, 140)} »`, [], title).caption,
+      // The whole quote: cut mid-sentence it can say the opposite (« moins de prélèvements sur les » …)
+      description: buildCaption(`« ${cutAtSentence(text, 400)} »`, [], title, { maxText: 420 }).caption,
       score: 9,
       text: text.slice(0, 1800),
       source: 'play',
