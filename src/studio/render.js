@@ -566,7 +566,8 @@ export function publicJob(job) {
   };
 }
 /** Un clip de cette vidéo est en file d'attente ou en cours de création (son fichier ne doit pas disparaître). */
-export const videoInUse = (youtubeId) => [...jobs.values()].some((j) => j.youtube_id === youtubeId && (j.status === 'queued' || j.status === 'running'));
+export const videoInUse = (youtubeId) =>
+  [...jobs.values()].some((j) => (j.youtube_id === youtubeId || j.youtube_ids?.includes(youtubeId)) && (j.status === 'queued' || j.status === 'running'));
 
 export const getJob = (id) => (/^[0-9a-f]{24}$/.test(id) ? jobs.get(id) : undefined);
 
@@ -618,6 +619,45 @@ export async function enqueueRender({ video, req, lines, ip: rawIp = 'local', ow
   return job;
 }
 
+/**
+ * Met en file un autre type de rendu (section « Edit ») : même file, mêmes limites par visiteur que les clips (un seul ffmpeg à la fois
+ * sur le serveur). `prepare(job)` écrit ses fichiers annexes et renvoie les arguments ffmpeg ; `youtubeIds` : interviews utilisées
+ * (leurs fichiers ne doivent pas disparaître pendant le rendu). Renvoie le job.
+ */
+export async function enqueueJob({ kind, ip: rawIp = 'local', owner = null, total, filename, prepare, youtubeIds = [], onDone = null }) {
+  const cfg = config();
+  const ip = ipKey(rawIp);
+  const mine = [...jobs.values()].filter((j) => j.ip === ip && (j.status === 'queued' || j.status === 'running')).length;
+  if (mine >= cfg.perIpActive) throw new HttpError(429, 'Tu as déjà une vidéo en cours de création : attends qu’elle soit prête.');
+  if (queue.length >= cfg.maxQueue) throw new HttpError(503, 'Le studio est très sollicité : réessaie dans quelques minutes.');
+  if (!take('render', ip, cfg.rendersPerHour)) throw new HttpError(429, `Limite atteinte : ${cfg.rendersPerHour} vidéos par heure. Réessaie plus tard.`);
+  await ensureDirs();
+  const id = crypto.randomBytes(12).toString('hex');
+  const job = {
+    id,
+    kind,
+    ip,
+    owner,
+    onDone,
+    youtube_id: null,
+    youtube_ids: [...new Set(youtubeIds)],
+    status: 'queued',
+    progress: 0,
+    total,
+    filename: `${String(filename).replace(/\.mp4$/i, '')}-${id.slice(0, 6)}.mp4`,
+    out: path.join(dirs().renders, `${id}.mp4`),
+    outLogo: null,
+    assPath: path.join(dirs().renders, `${id}.ass`),
+    prepare,
+    req: null,
+    createdAt: Date.now(),
+  };
+  jobs.set(id, job);
+  queue.push(job);
+  pump();
+  return job;
+}
+
 function pump() {
   while (running < config().concurrency && queue.length) {
     const job = queue.shift();
@@ -629,19 +669,25 @@ function pump() {
   }
 }
 
+/** Préparation d'un clip : sous-titres (calés sur la voix), images, puis arguments ffmpeg. */
+async function prepareClip(job) {
+  // A long first detection must not hold the render: past 90 s the plain spread is used and detection goes on
+  const silences = await Promise.race([videoSilences({ id: job.video.id, stamp: job.video.stamp, file: job.file, hasAudio: job.hasAudio }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 90_000).unref())]);
+  await fs.writeFile(job.assPath, await assForRequest({ req: job.req, lines: job.lines, video: job.video, silences })); // (mesure du fond arrondi comprise : dans la file, pas avant)
+  if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true }); // pendant la mesure du fond ; onDone doit tout de même suivre
+  const images = {};
+  for (const b of job.req.broll) images[b.id] = await ensureImage(b.id, 'full', { ip: job.ip });
+  if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true });
+  if (job.card) images.__card = job.card;
+  if (job.logo) images.__logo = job.logo;
+  return buildFfmpegArgs({ file: job.file, req: job.req, hasAudio: job.hasAudio, assPath: job.assPath, out: job.out, outLogo: job.outLogo, kind: 'final', images });
+}
+
 async function runJob(job) {
   job.status = 'running';
   try {
-    // A long first detection must not hold the render: past 90 s the plain spread is used and detection goes on
-    const silences = await Promise.race([videoSilences({ id: job.video.id, stamp: job.video.stamp, file: job.file, hasAudio: job.hasAudio }).catch(() => null), new Promise((r) => setTimeout(() => r(null), 90_000).unref())]);
-    await fs.writeFile(job.assPath, await assForRequest({ req: job.req, lines: job.lines, video: job.video, silences })); // (mesure du fond arrondi comprise : dans la file, pas avant)
-    if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true }); // pendant la mesure du fond ; onDone doit tout de même suivre
-    const images = {};
-    for (const b of job.req.broll) images[b.id] = await ensureImage(b.id, 'full', { ip: job.ip });
+    const args = await (job.prepare ? job.prepare(job) : prepareClip(job));
     if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true });
-    if (job.card) images.__card = job.card;
-    if (job.logo) images.__logo = job.logo;
-    const args = buildFfmpegArgs({ file: job.file, req: job.req, hasAudio: job.hasAudio, assPath: job.assPath, out: job.out, outLogo: job.outLogo, kind: 'final', images });
     const run = runFfmpeg(args, job.total, { onProgress: (p) => (job.progress = p), timeoutMs: config().timeoutMs });
     job.cancel = run.cancel;
     await run.promise;
