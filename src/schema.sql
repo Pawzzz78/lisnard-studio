@@ -331,3 +331,11 @@ CREATE TABLE IF NOT EXISTS video_api_costs (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (video_id, feature, provider, model)
 );
+
+-- Section « Edit » : temps forts d'un morceau de la bibliothèque (tempo, grille des temps, temps forts, drops), liés à l'empreinte du fichier
+CREATE TABLE IF NOT EXISTS music_beats (
+  track_id   TEXT PRIMARY KEY,
+  stamp      TEXT NOT NULL,
+  data       JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
