@@ -98,10 +98,12 @@ export function buildEditArgs({ plan, files, size, assPath = null, out }) {
  * Renvoie le job (suivi avec getJob / publicJob de studio/render.js).
  */
 export function enqueueEditRender({ plan, files, quality = 'hd', ip, owner = null, filename = 'edit-lisnard', onDone = null }) {
+  // previews (360 × 640) count against the preview budget, not the video one
   const size = EDIT_SIZES[quality] ?? EDIT_SIZES.hd;
   const font = FONTS.find((x) => x.id === plan.font) ?? FONTS[0];
   return enqueueJob({
     kind: 'edit',
+    quota: quality === 'preview' ? 'preview' : 'render',
     ip,
     owner,
     onDone,

@@ -39,6 +39,7 @@ const present = (r) => {
     name: r.name,
     track_id: r.track_id,
     track_title: track?.title ?? null,
+    track_credit: track?.credit ?? '',
     track_ok: Boolean(track),
     enabled: r.enabled,
     position: r.position,

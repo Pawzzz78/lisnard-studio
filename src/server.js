@@ -11,6 +11,7 @@ import { libraryRouter } from './routes/library.js';
 import { membersRouter } from './routes/members.js';
 import { publicRouter } from './routes/public.js';
 import { studioRouter } from './routes/studio.js';
+import { editRouter } from './routes/edit.js';
 import { wallRouter } from './routes/wall.js';
 import { startStudioCleanup, studioCapabilities } from './studio/render.js';
 import { startSummaryScheduler } from './auto-summaries.js';
@@ -61,6 +62,7 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
   app.use('/api/auth', membersRouter);
   app.use('/api/studio', requireMember, studioRouter);
+  app.use('/api/edit', requireMember, editRouter); // section « Edit » : montages rythmés, réservée aux adhérents comme le studio
   app.use('/api/agent', agentRouter); // agents IA : clé API, pas de compte adhérent
   app.use('/api/wall', wallRouter);
   app.use('/api/library', libraryRouter);

@@ -1,0 +1,50 @@
+/* Section « Edit » : grands éléments, faciles à toucher et à lire (public de plus de 60 ans) */
+.edit { display: grid; gap: 1.2rem; margin-top: -3.5rem; padding-bottom: 3rem; position: relative; font-size: 1.05rem; }
+.ed-card { background: var(--color-surface); border-radius: var(--radius-card); box-shadow: var(--shadow); padding: 1.4rem 1.3rem 1.6rem; display: grid; gap: .9rem; min-width: 0; }
+.ed-card h2 { margin: 0; font-family: var(--font-display); font-weight: var(--font-weight-display); text-transform: uppercase; letter-spacing: var(--tracking-title); color: var(--color-primary); font-size: 1.35rem; display: flex; align-items: center; gap: .6rem; }
+.ed-card h3 { margin: .6rem 0 0; color: var(--color-primary); font-size: 1.05rem; }
+.ed-n { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--color-accent); color: var(--color-accent-contrast); font-size: 1rem; flex: none; }
+.ed-hint { margin: 0; color: var(--color-muted); line-height: 1.5; }
+.ed-msg { margin: 0; font-weight: 700; color: var(--color-primary); min-height: 1.4em; }
+.ed-msg.err { color: var(--color-danger); }
+.ed-actions { display: flex; flex-wrap: wrap; gap: .7rem; margin: 0; }
+.ed-actions .btn { min-height: 3.2rem; font-size: .9rem; }
+
+.ed-tpls { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .9rem; }
+.ed-tpl { width: 100%; display: grid; gap: .35rem; padding: .5rem; border: 3px solid var(--color-hairline); border-radius: var(--radius-card); background: var(--color-surface-alt); cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.ed-tpl.on { border-color: var(--color-success); background: #fff; box-shadow: 0 0 0 4px rgba(23, 115, 68, .14); }
+.ed-tpl video { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; background: #000; }
+.ed-tpl-name { font-weight: 800; font-size: 1.05rem; color: var(--color-primary); }
+.ed-tpl-song { font-size: .9rem; color: var(--color-muted); }
+
+.ed-opts { display: grid; gap: .6rem; }
+.ed-opt { display: flex; gap: .7rem; align-items: flex-start; padding: .9rem 1rem; border: 3px solid var(--color-hairline); border-radius: var(--radius-card); cursor: pointer; }
+.ed-opt.on { border-color: var(--color-success); }
+.ed-opt input { width: 1.4rem; height: 1.4rem; margin-top: .15rem; flex: none; }
+.ed-opt span { display: grid; gap: .2rem; }
+.ed-opt small { color: var(--color-muted); font-size: .95rem; }
+.ed-videos { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.ed-video { display: grid; grid-template-columns: auto 96px 1fr; gap: .7rem; align-items: center; padding: .5rem .7rem; border: 2px solid var(--color-hairline); border-radius: var(--radius-card); cursor: pointer; }
+.ed-video.on { border-color: var(--color-success); background: #fff; }
+.ed-video input { width: 1.4rem; height: 1.4rem; }
+.ed-video img { width: 96px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
+.ed-video span { display: grid; gap: .15rem; min-width: 0; }
+.ed-video strong { font-size: 1rem; line-height: 1.3; overflow-wrap: anywhere; }
+.ed-video small { color: var(--color-muted); }
+.ed-check { display: flex; gap: .6rem; align-items: flex-start; line-height: 1.45; cursor: pointer; }
+.ed-check input { width: 1.4rem; height: 1.4rem; flex: none; margin-top: .1rem; }
+
+.ed-text { display: grid; gap: .3rem; font-weight: 700; color: var(--color-primary); }
+.ed-text input, .ed-result textarea { font: inherit; font-size: 1.05rem; padding: .8rem .9rem; border: 2px solid var(--color-border); border-radius: 10px; width: 100%; box-sizing: border-box; color: var(--color-text); font-weight: 400; }
+.ed-text input:focus, .ed-result textarea:focus { outline: 3px solid var(--color-ring); outline-offset: 1px; }
+
+.ed-result { display: grid; gap: .8rem; justify-items: start; }
+.ed-result:empty { display: none; }
+.ed-result video { width: 100%; max-width: 320px; aspect-ratio: 9 / 16; border-radius: 14px; background: #000; }
+.ed-gate { justify-items: start; }
+
+@media (max-width: 520px) {
+  .ed-tpls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ed-video { grid-template-columns: auto 72px 1fr; }
+  .ed-video img { width: 72px; }
+}

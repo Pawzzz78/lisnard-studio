@@ -624,13 +624,15 @@ export async function enqueueRender({ video, req, lines, ip: rawIp = 'local', ow
  * sur le serveur). `prepare(job)` écrit ses fichiers annexes et renvoie les arguments ffmpeg ; `youtubeIds` : interviews utilisées
  * (leurs fichiers ne doivent pas disparaître pendant le rendu). Renvoie le job.
  */
-export async function enqueueJob({ kind, ip: rawIp = 'local', owner = null, total, filename, prepare, youtubeIds = [], onDone = null }) {
+export async function enqueueJob({ kind, ip: rawIp = 'local', owner = null, total, filename, prepare, youtubeIds = [], onDone = null, quota = 'render' }) {
   const cfg = config();
   const ip = ipKey(rawIp);
   const mine = [...jobs.values()].filter((j) => j.ip === ip && (j.status === 'queued' || j.status === 'running')).length;
   if (mine >= cfg.perIpActive) throw new HttpError(429, 'Tu as déjà une vidéo en cours de création : attends qu’elle soit prête.');
   if (queue.length >= cfg.maxQueue) throw new HttpError(503, 'Le studio est très sollicité : réessaie dans quelques minutes.');
-  if (!take('render', ip, cfg.rendersPerHour)) throw new HttpError(429, `Limite atteinte : ${cfg.rendersPerHour} vidéos par heure. Réessaie plus tard.`);
+  // Previews have their own, larger hourly budget (as for clip previews): they are small and quick
+  const max = quota === 'preview' ? cfg.previewsPerHour : cfg.rendersPerHour;
+  if (!take(quota === 'preview' ? 'preview' : 'render', ip, max)) throw new HttpError(429, `Limite atteinte : ${max} ${quota === 'preview' ? 'aperçus' : 'vidéos'} par heure. Réessaie plus tard.`);
   await ensureDirs();
   const id = crypto.randomBytes(12).toString('hex');
   const job = {

@@ -12,7 +12,8 @@ import crypto from 'node:crypto';
 import { pool } from '../db.js';
 
 export const VISITOR_RETENTION_DAYS = 90;
-const KINDS = new Set(['render', 'download', 'share']);
+// edit, edit_download, edit_share: the « Edit » section (beat-synced montages), counted apart from clips
+const KINDS = new Set(['render', 'download', 'share', 'edit', 'edit_download', 'edit_share']);
 
 const secret = () => process.env.SESSION_SECRET || process.env.ADMIN_PASSWORD;
 // Without a server secret the hash would be reversible, so people are not counted
