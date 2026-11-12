@@ -155,15 +155,31 @@ export function estimateTempo(env, frameRate, { minBpm = BEATS.minBpm, maxBpm = 
 
 const round3 = (s) => Math.round(s * 1000) / 1000;
 
-/** Analyse complète d'un son déjà décodé : { bpm, beats, strong, drops, duration, reliable }. Temps en secondes. */
+/** Enveloppe du son pour l'admin (forme d'onde) : au plus 600 valeurs de 0 à 1, une tous les 1/10 s environ. */
+export function peaksOf(samples, rate = BEATS.rate) {
+  const n = Math.min(600, Math.max(1, Math.ceil((samples.length / rate) * 10)));
+  const size = Math.max(1, Math.floor(samples.length / n));
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    let s = 0;
+    const end = Math.min(samples.length, (k + 1) * size);
+    for (let i = k * size; i < end; i++) s += samples[i] * samples[i];
+    out.push(end > k * size ? Math.sqrt(s / (end - k * size)) : 0);
+  }
+  const max = Math.max(1e-9, ...out);
+  return out.map((v) => Math.round((v / max) * 100) / 100);
+}
+
+/** Analyse complète d'un son déjà décodé : { bpm, beats, strong, drops, duration, reliable, reliability, peaks }. Temps en secondes. */
 export function analyzeSamples(samples, { rate = BEATS.rate, hop = BEATS.hop } = {}) {
   const duration = samples.length / rate;
+  const peaks = samples.length ? peaksOf(samples, rate) : [];
   const env = onsetEnvelope(samples, { hop, rate });
   const frameRate = rate / hop;
   const tempo = estimateTempo(env, frameRate);
   // A rise is seen as soon as the window reaches the attack: frame time = start of the window + most of its length
   const lag = (BEATS.win * 0.8) / rate;
-  if (!tempo) return { bpm: null, beats: [], strong: [], drops: [], duration: round3(duration), reliable: false };
+  if (!tempo) return { bpm: null, beats: [], strong: [], drops: [], duration: round3(duration), reliable: false, reliability: 0, peaks };
   const beats = [];
   for (let t = tempo.phase + lag; t < duration - 0.05; t += tempo.period) beats.push(round3(t));
   // Strong beats: of the four possible offsets, the one whose beats carry the most attack energy
@@ -209,6 +225,7 @@ export function analyzeSamples(samples, { rate = BEATS.rate, hop = BEATS.hop } =
     duration: round3(duration),
     reliable: tempo.reliability >= BEATS.reliableAbove,
     reliability: Math.round(tempo.reliability * 100) / 100,
+    peaks,
   };
 }
 
@@ -257,4 +274,24 @@ export async function trackBeats(track, { analyze = analyzeFile } = {}) {
     inflight.set(key, p);
   }
   return p;
+}
+
+/**
+ * Analyse en tâche de fond les morceaux de la bibliothèque qui ne le sont pas encore (ajouts de l'admin, sons tendance de la semaine),
+ * un à la fois, pour que l'admin des modèles les trouve prêts. `tracks()` : liste de { id, path }.
+ */
+export async function warmBeats(tracks, { analyze = analyzeFile } = {}) {
+  const { rows } = await pool.query('SELECT track_id, stamp FROM music_beats');
+  const known = new Map(rows.map((r) => [r.track_id, r.stamp]));
+  let done = 0;
+  for (const t of tracks) {
+    try {
+      if (known.get(t.id) === (await stampOf(t.path))) continue;
+      await trackBeats(t, { analyze });
+      done++;
+    } catch (e) {
+      console.warn(`Temps forts de « ${t.id} » : ${e.message}`);
+    }
+  }
+  return done;
 }

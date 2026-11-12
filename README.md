@@ -311,7 +311,25 @@ David Lisnard ; les modèles sont créés par l'admin. Tout est calculé sur le 
 - Tests : `test/edit-beats.test.js` (sons de synthèse : 120 et 90 BPM, temps à moins de 25 ms, bruit jugé peu sûr, drop, cache),
   `test/edit-core.test.js`, `test/edit-render.test.js` (rendu réel 1080 × 1920 : chaque coupe vue à moins de 40 ms de son temps).
 
-Étapes suivantes : l'admin (photothèque, modèles, aperçu), puis la page publique `/edit/` et la navigation « Clipping · Edit ».
+Étape 2 (admin → « Edit ») :
+
+- **Photothèque de David Lisnard** (`src/edit/images.js`, table `edit_images`) : JPEG, PNG ou WebP déposés par l'admin, qui confirme en avoir
+  les droits ; 300 px de côté au minimum, 25 Mo au plus ; réduits à 2160 px et convertis en JPEG, avec une vignette de 360 px
+  (`<STORAGE_DIR>/edit/images/`). Titre, crédit, visibilité, suppression ; 300 photos au plus.
+- **Modèles** (`src/edit/templates.js`, table `edit_templates`) : créés à partir d'une recette de départ, puis réglés sur une page dédiée :
+  le son (sons tendance en tête), sa **forme d'onde** avec les temps, les temps forts et les drops (un clic fait commencer le passage sur le
+  temps fort le plus proche ; « Écouter le passage »), la longueur en temps, un tempo imposé si le rythme est peu net, les sections de la
+  recette (durée, coupe tous les ½ à 8 temps, effets, part de photos), l'étalonnage, la police et jusqu'à 3 textes.
+- **Aperçu** : rendu en 360 × 640 par la file des clips, avec les photos actives de la photothèque et deux extraits proposés de chacune des
+  trois interviews les plus récentes du studio ; gardé dans `<STORAGE_DIR>/edit/previews/`. Un modèle ne peut être mis en ligne qu'avec un
+  aperçu ; modifier ses réglages efface l'aperçu, et le modèle n'est plus proposé aux adhérents tant qu'il n'est pas regénéré (ni si son
+  son a quitté la bibliothèque).
+- **Temps forts de toute la bibliothèque** (`src/edit/warmup.js`) : analysés en tâche de fond 3 minutes après le démarrage puis toutes les
+  6 heures (ajouts de l'admin, sons tendance de la semaine) ; un son déjà analysé n'est pas repris. L'analyse garde aussi l'enveloppe du son
+  (forme d'onde, 600 valeurs au plus).
+- Routes : `/api/admin/edit` (`src/routes/edit-admin.js`). Tests : `test/edit-admin.test.js`.
+
+Étape suivante : la page publique `/edit/` et la navigation « Clipping · Edit ».
 
 ## API privée et serveur MCP pour les agents IA
 
