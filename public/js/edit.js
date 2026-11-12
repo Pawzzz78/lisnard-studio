@@ -99,7 +99,7 @@ async function main() {
                   drawVideos();
                   resetResult();
                 } }),
-                v.thumbnail_url ? el('img', { src: v.thumbnail_url, alt: '', loading: 'lazy' }) : null,
+                v.thumbnail_url ? el('img', { src: v.thumbnail_url, alt: '', loading: 'lazy' }) : el('span', { class: 'ed-noimg', 'aria-hidden': 'true' }),
                 el('span', {}, el('strong', {}, v.title), el('small', {}, fmtDate(v.published_at)))));
           }))
         : null,

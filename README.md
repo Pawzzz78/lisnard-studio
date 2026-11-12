@@ -329,7 +329,22 @@ David Lisnard ; les modèles sont créés par l'admin. Tout est calculé sur le 
   (forme d'onde, 600 valeurs au plus).
 - Routes : `/api/admin/edit` (`src/routes/edit-admin.js`). Tests : `test/edit-admin.test.js`.
 
-Étape suivante : la page publique `/edit/` et la navigation « Clipping · Edit ».
+Étape 3 (page publique `/edit/`, réservée aux adhérents comme le clipping) :
+
+- **Navigation** : « Clipping » (le studio de clips, à `/`) · « Edit » · Bibliothèque · Le mur, sur toutes les pages.
+- **Parcours en 4 étapes**, en grand pour un public de plus de 60 ans : 1. le modèle (cartes avec leur aperçu, qui tourne en boucle sans
+  le son) ; 2. les images (les interviews les plus récentes, ou jusqu'à 3 interviews choisies ; avec ou sans les photos de la photothèque) ;
+  3. jusqu'à 3 textes (ceux du modèle au départ ; un texte de plus se place sur un temps libre) ; 4. « Voir l'aperçu » (360 × 640, avec le
+  son) puis « Créer la vidéo » (1080 × 1920), après l'engagement à ne pas prêter à David Lisnard des propos qu'il n'a pas tenus.
+  La vidéo prête : lecture, « Télécharger », « Partager sur TikTok » (téléphone), et la description à copier (premier texte, #projetlisnard,
+  lien du Discord, crédit du son).
+- **Montage** (`src/edit/session.js`) : les extraits proposés de chaque interview (citations Lisnard Play en tête, 4 au plus par
+  interview), recadrés en vertical sur le visage de David Lisnard (médiane du cadrage automatique sur l'extrait ; au centre sans analyse des
+  visages), les photos actives de la photothèque, et la recette du modèle.
+- **Routes** `/api/edit` (`src/routes/edit.js`) : modèles en ligne et leur aperçu, aperçu et création du montage (même file que les clips ;
+  les aperçus comptent sur le budget des aperçus), suivi, fichier (lu dans la page, ou `?use=download` / `?use=share`), annulation.
+  Statistiques à part des clips (`studio_events` : `edit`, `edit_download`, `edit_share`).
+- Tests : `test/edit-public.test.js`.
 
 ## API privée et serveur MCP pour les agents IA
 

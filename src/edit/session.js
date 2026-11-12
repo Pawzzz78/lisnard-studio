@@ -63,8 +63,9 @@ function textsFor(template, texts) {
   if (texts === undefined || texts === null) return template.texts;
   if (!Array.isArray(texts) || texts.length > EDIT.maxTexts) throw new HttpError(400, `${EDIT.maxTexts} textes au maximum.`);
   const beats = template.texts.map((t) => t.beat);
-  // A text the template did not plan: on the next free beat, every 8 beats
-  for (let b = 0; beats.length < texts.length; b += 8) if (!beats.includes(b) && b < template.length_beats) beats.push(b);
+  // A text the template did not plan: on a free beat, every 8 beats first, then every 4 (none left: that text is dropped)
+  const free = [8, 4].flatMap((step) => Array.from({ length: Math.ceil(template.length_beats / step) }, (_, k) => k * step)).filter((b, i, all) => all.indexOf(b) === i && !beats.includes(b));
+  while (beats.length < texts.length && free.length) beats.push(free.shift());
   return texts
     .map((t, i) => ({ text: clean(t, EDIT.maxTextLen), beat: beats[i] }))
     .filter((t) => t.text && Number.isInteger(t.beat))
