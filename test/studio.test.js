@@ -54,6 +54,8 @@ before(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-test-'));
   process.env.STORAGE_DIR = path.join(dir, 'storage');
   process.env.STUDIO_RENDERS_PER_HOUR = '100';
+  // these tests compare renders image by image: the per-download uniqueness (tested in studio-uniq.test.js) would blur them
+  process.env.STUDIO_UNIQ = 'off';
   process.env.ADMIN_PASSWORD = 'pw-test';
   process.env.SESSION_SECRET = 'x'.repeat(32);
   await fs.mkdir(path.join(process.env.STORAGE_DIR, 'videos'), { recursive: true });

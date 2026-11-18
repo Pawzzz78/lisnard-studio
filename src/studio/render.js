@@ -21,6 +21,7 @@ import { videoSilences } from './voice.js';
 import { HttpError } from '../http-error.js';
 import { createLimiter, ipKey } from '../ip.js';
 import { stampOf, storageDir, videoFilePath } from '../media.js';
+import { audioFilters, seedFrom, uniqCapabilities, uniqParams, videoFilters } from './uniquify.js';
 
 const read = (name) => JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), 'utf8'));
 export const FONTS = read('fonts.json');
@@ -37,6 +38,9 @@ export const config = () => ({
   framingPerHour: Number(process.env.STUDIO_FRAMING_PER_HOUR) || 600,
   fileServeFactor: Number(process.env.STUDIO_FILE_MAX_FACTOR) || 10,
   ttlMs: 60 * 60 * 1000,
+  // every downloaded clip is unique (invisible micro-variations), so that the community's TikToks are never identical files
+  uniq: !/^(off|false|0|non)$/i.test(process.env.STUDIO_UNIQ ?? 'on'),
+  uniqLevel: String(process.env.STUDIO_UNIQ_LEVEL ?? 'gentle').toLowerCase() === 'medium' ? 'medium' : 'gentle',
   timeoutMs: 12 * 60 * 1000,
 });
 
@@ -218,7 +222,7 @@ function layoutChain(i, { w, h }, layout, kind, seg = null) {
  * Arguments ffmpeg d'un rendu. `kind` : 'final' (sous-titres + musique) ou 'preview' (cadrage seul, petite définition).
  * Fonction pure : testable sans lancer ffmpeg.
  */
-export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'final', images = {}, outLogo = null }) {
+export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'final', images = {}, outServed = null, uniq = null }) {
   const size = kind === 'preview' ? SIZES.preview : SIZES[req.layout.quality];
   const args = ['-hide_banner', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1', '-y'];
   req.extracts.forEach((e) => args.push('-ss', String(e.start_ms / 1000), '-t', String((e.end_ms - e.start_ms) / 1000), '-i', file));
@@ -233,7 +237,7 @@ export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'fin
   const cardImage = kind === 'final' && req.end_card?.image ? images.__card ?? cardFile(req.end_card.image) : null;
   if (cardImage) args.push('-loop', '1', '-framerate', String(FPS), '-t', String(req.end_card.dur), '-i', cardImage);
   const logoIdx = cardIdx + (cardImage ? 1 : 0);
-  const logoImage = kind === 'final' && req.logo && outLogo ? images.__logo ?? logoFile(req.logo.image) : null;
+  const logoImage = kind === 'final' && req.logo && outServed ? images.__logo ?? logoFile(req.logo.image) : null;
   if (logoImage) args.push('-loop', '1', '-framerate', String(FPS), '-t', String(outTotal), '-i', logoImage);
 
   const f = [];
@@ -289,24 +293,43 @@ export function buildFfmpegArgs({ file, req, hasAudio, assPath, out, kind = 'fin
   const enc = ['-c:v', 'libx264', '-preset', size.preset, '-crf', String(size.crf), '-pix_fmt', 'yuv420p', '-r', '30'];
   if (kind === 'final') enc.push('-profile:v', 'high', '-level', '4.1');
   enc.push('-c:a', 'aac', '-b:a', kind === 'final' ? '160k' : '64k', '-ar', '48000', '-t', String(outTotal), '-movflags', '+faststart');
-  if (!logoImage) {
+  const unique = kind === 'final' && outServed && uniq ? uniqParams(uniq.seed, uniq.level) : null;
+  if (!logoImage && !unique) {
     args.push(...enc, out);
     return args;
   }
-  // Two outputs from one pass: the clean video (published to the library) and the one carrying the account logo
+  // Two outputs from one pass: the clean video (published to the library, which makes its own unique copies) and the one the
+  // visitor downloads, carrying their account logo and/or invisible micro-variations that make every downloaded file unique
   const fc = args[args.indexOf('-filter_complex') + 1];
-  const lw = even(size.w * req.logo.size);
-  const x = { l: `W*${LOGO.marginX}`, c: '(W-w)/2', r: `W-w-W*${LOGO.marginX}` }[req.logo.pos[1]];
-  const y = { t: `H*${LOGO.marginTop}`, m: '(H-h)/2', b: `H-h-H*${LOGO.marginBottom}` }[req.logo.pos[0]];
-  const extra = [
-    '[vo]split=2[vclean][vl]',
-    `[${logoIdx}:v]scale=${lw}:-1,format=rgba,colorchannelmixer=aa=${req.logo.opacity}[lg]`,
-    `[vl][lg]overlay=x=${x}:y=${y}:enable='lt(t,${req.total})':eof_action=pass,format=yuv420p[vlogo]`,
-    '[ao]asplit=2[ao1][ao2]',
-  ].join(';');
-  args.splice(args.indexOf('-filter_complex'), 6, '-filter_complex', `${fc};${extra}`);
-  args.push('-map', '[vclean]', '-map', '[ao1]', ...enc, out, '-map', '[vlogo]', '-map', '[ao2]', ...enc, outLogo);
+  const extra = ['[vo]split=2[vclean][vs]', '[ao]asplit=2[ao1][as]'];
+  let v = 'vs';
+  let a = 'as';
+  if (logoImage) {
+    const lw = even(size.w * req.logo.size);
+    const x = { l: `W*${LOGO.marginX}`, c: '(W-w)/2', r: `W-w-W*${LOGO.marginX}` }[req.logo.pos[1]];
+    const y = { t: `H*${LOGO.marginTop}`, m: '(H-h)/2', b: `H-h-H*${LOGO.marginBottom}` }[req.logo.pos[0]];
+    extra.push(`[${logoIdx}:v]scale=${lw}:-1,format=rgba,colorchannelmixer=aa=${req.logo.opacity}[lg]`);
+    extra.push(`[${v}][lg]overlay=x=${x}:y=${y}:enable='lt(t,${req.total})':eof_action=pass,format=yuv420p[vlogo]`);
+    v = 'vlogo';
+  }
+  if (unique) {
+    extra.push(`[${v}]${videoFilters(unique, size)},format=yuv420p[vu]`);
+    extra.push(`[${a}]${audioFilters(unique, { rubberband: uniq.rubberband })}[au]`);
+    v = 'vu';
+    a = 'au';
+  }
+  args.splice(args.indexOf('-filter_complex'), 6, '-filter_complex', `${fc};${extra.join(';')}`);
+  // trimStart: the served copy loses its first 1 to 3 frames, image and sound together (sync kept, alignment shifted)
+  args.push('-map', '[vclean]', '-map', '[ao1]', ...enc, out, '-map', `[${v}]`, '-map', `[${a}]`, ...(unique ? ['-ss', String(unique.trimStart)] : []), ...enc, outServed);
   return args;
+}
+
+/** Réglage d'unicité d'un rendu : seed propre au rendu (une autre personne, ou un autre rendu, obtient un autre fichier), ou null. */
+async function uniqFor(id) {
+  const cfg = config();
+  if (!cfg.uniq) return null;
+  const caps = await uniqCapabilities().catch(() => ({ ok: false }));
+  return caps.ok ? { seed: seedFrom(`studio|${id}`), level: cfg.uniqLevel, rubberband: caps.rubberband } : null;
 }
 
 /**
@@ -561,7 +584,8 @@ export function publicJob(job) {
     duration_s: job.total,
     filename: job.filename,
     size: job.size ?? null,
-    has_logo: Boolean(job.outLogo),
+    has_logo: Boolean(job.outServed && job.req?.logo),
+    unique: Boolean(job.uniq),
     expires_in_s: job.finishedAt ? Math.max(0, Math.round((job.finishedAt + config().ttlMs - Date.now()) / 1000)) : null,
   };
 }
@@ -590,11 +614,13 @@ export async function enqueueRender({ video, req, lines, ip: rawIp = 'local', ow
     for (const f of [card, logo]) if (f) await fs.rm(f, { force: true });
     throw e;
   }
+  const uniq = await uniqFor(id);
   const job = {
     id,
     ip,
     owner,
     onDone,
+    uniq,
     youtube_id: video.youtube_id,
     video: { id: video.id, title: video.title, published_at: video.published_at ?? null, stamp: stampOf(video), text_hash: video.text_hash ?? null },
     status: 'queued',
@@ -602,7 +628,8 @@ export async function enqueueRender({ video, req, lines, ip: rawIp = 'local', ow
     total: req.outTotal ?? req.total,
     filename: `studio-lisnard-${slug(video.title)}-${id.slice(0, 6)}.mp4`,
     out: path.join(dirs().renders, `${id}.mp4`),
-    outLogo: logo ? path.join(dirs().renders, `${id}.withlogo.mp4`) : null,
+    // the copy the visitor downloads (logo and/or uniqueness); without either, the clean file itself
+    outServed: logo || uniq ? path.join(dirs().renders, `${id}.served.mp4`) : null,
     logo,
     assPath: path.join(dirs().renders, `${id}.ass`),
     file: videoFilePath(video.file_name),
@@ -641,13 +668,13 @@ async function runJob(job) {
     if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true });
     if (job.card) images.__card = job.card;
     if (job.logo) images.__logo = job.logo;
-    const args = buildFfmpegArgs({ file: job.file, req: job.req, hasAudio: job.hasAudio, assPath: job.assPath, out: job.out, outLogo: job.outLogo, kind: 'final', images });
+    const args = buildFfmpegArgs({ file: job.file, req: job.req, hasAudio: job.hasAudio, assPath: job.assPath, out: job.out, outServed: job.outServed, kind: 'final', images, uniq: job.uniq });
     const run = runFfmpeg(args, job.total, { onProgress: (p) => (job.progress = p), timeoutMs: config().timeoutMs });
     job.cancel = run.cancel;
     await run.promise;
     if (job.status === 'cancelled') throw Object.assign(new Error('annulé'), { cancelled: true }); // cancelled just after ffmpeg ended
     job.size = (await fs.stat(job.out)).size;
-    job.sizeServed = job.outLogo ? (await fs.stat(job.outLogo)).size : job.size;
+    job.sizeServed = job.outServed ? (await fs.stat(job.outServed)).size : job.size;
     if (job.card) await fs.utimes(job.card, new Date(), new Date()).catch(() => {}); // kept as long as the finished clip
     job.status = 'done';
     job.progress = 1;
@@ -660,7 +687,7 @@ async function runJob(job) {
       }
     }
     await fs.rm(job.out, { force: true });
-    if (job.outLogo) await fs.rm(job.outLogo, { force: true });
+    if (job.outServed) await fs.rm(job.outServed, { force: true });
   } finally {
     job.finishedAt = Date.now();
     job.cancel = null;
@@ -683,7 +710,7 @@ export async function cancelJob(job) {
     job.cancel?.();
   } else {
     await fs.rm(job.out, { force: true });
-    if (job.outLogo) await fs.rm(job.outLogo, { force: true });
+    if (job.outServed) await fs.rm(job.outServed, { force: true });
     jobs.delete(job.id);
   }
 }
@@ -695,7 +722,7 @@ export async function cleanup(now = Date.now()) {
   for (const [id, job] of jobs) {
     if (job.finishedAt && now - job.finishedAt > ttl) {
       await fs.rm(job.out, { force: true });
-      if (job.outLogo) await fs.rm(job.outLogo, { force: true });
+      if (job.outServed) await fs.rm(job.outServed, { force: true });
       jobs.delete(id);
     }
   }

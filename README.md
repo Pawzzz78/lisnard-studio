@@ -512,6 +512,13 @@ paraît presque silencieuse (musique, bruit de fond), la répartition simple est
 - Au rendu, il est envoyé en PNG (`POST /api/studio/logo`, vérifié avec ffprobe, gardé le temps du rendu) ; ffmpeg produit en une passe **deux
   fichiers** : la vidéo avec le logo (téléchargée et partagée par le visiteur) et la vidéo sans logo, **la seule publiée dans la bibliothèque**. Le
   réglage du logo n'est pas gardé avec le clip (« Modifier » et « Recréer » ne le reprennent pas). Le logo n'apparaît pas sur l'écran de fin.
+- **Chaque vidéo créée est unique** : comme pour la bibliothèque, un clip créé dans le studio n'est jamais téléchargé deux fois à l'identique.
+  Dans la même passe ffmpeg, la version téléchargée par le visiteur (avec ou sans logo) reçoit les micro-transforms invisibles de
+  `src/studio/uniquify.js` (couleur, micro-recadrage, grain, 1 à 3 premières frames retirées, pitch et EQ subtils), avec un seed propre au
+  rendu : deux personnes qui créent le même clip avec les mêmes réglages publient deux fichiers différents. La version propre reste celle
+  publiée dans la bibliothèque, qui fait ensuite sa propre version unique pour chaque personne. Pas de deuxième passe, donc pas d'attente en
+  plus ; si ffmpeg ne sait pas le faire, le clip est servi tel quel. `STUDIO_UNIQ=off` la désactive, `STUDIO_UNIQ_LEVEL=medium` la renforce.
+  Les téléchargements de l'API des agents passent par la même route et sont donc uniques eux aussi. Test : `test/studio-uniq.test.js`.
 
 ### Modèles et écran de fin
 

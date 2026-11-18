@@ -273,8 +273,8 @@ studioRouter.get('/render/:id/file', async (req, res, next) => {
     const use = req.query.use === 'download' ? 'download' : req.query.use === 'share' ? 'share' : null;
     if (use && req.method === 'GET') await recordEvent(use, { jobId: job.id, youtubeId: job.youtube_id, ip: req.ip });
     res.set('Cache-Control', 'no-store');
-    // The visitor gets the version with their logo; the library only ever receives the clean one
-    res.download(job.outLogo ?? job.out, job.filename, (err) => {
+    // The visitor gets their own copy (logo and/or uniqueness); the library only ever receives the clean one
+    res.download(job.outServed ?? job.out, job.filename, (err) => {
       if (err && !res.headersSent) res.status(404).json({ error: 'Clip expiré.' });
     });
   } catch (e) {
