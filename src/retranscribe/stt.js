@@ -3,7 +3,9 @@ import { LlmError } from '../openrouter.js';
 import { fromOpenRouter, recordUsage } from '../usage.js';
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/audio/transcriptions';
-export const STT_MODEL = 'x-ai/grok-stt-1.0';
+// x-ai/grok-stt-1.0 was withdrawn from OpenRouter ("No endpoints found"); RETX_STT_MODEL switches model without a code change
+export const STT_MODEL = 'x-ai/grok-stt-2.0';
+export const sttModel = () => process.env.RETX_STT_MODEL || STT_MODEL;
 // Proper nouns the model should spell right (same list as tools/transcribe.py)
 export const KEYTERMS = ['David Lisnard', 'Lisnard', 'Cannes', 'Nouvelle Énergie', 'Association des maires de France', 'AMF'];
 
@@ -13,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Transcrit un mp3 (Buffer). Renvoie { text, words: [{ word, start, end }] (secondes), segments, durationS }.
  * Réessaie sur 429 / 5xx ; sur 400, une fois sans les options facultatives (mots, termes clés) que le fournisseur peut refuser.
  */
-export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, model = STT_MODEL, videoId = null } = {}, { fetchImpl = fetch, retryDelayMs = 2000, timeoutMs = 120_000, maxAttempts = 3 } = {}) {
+export async function transcribeChunk(buf, { lang = 'fr', keyterms = KEYTERMS, model = sttModel(), videoId = null } = {}, { fetchImpl = fetch, retryDelayMs = 2000, timeoutMs = 120_000, maxAttempts = 3 } = {}) {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new LlmError("OPENROUTER_API_KEY n'est pas configurée.", 'config');
   let lean = false;
