@@ -331,3 +331,7 @@ CREATE TABLE IF NOT EXISTS video_api_costs (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (video_id, feature, provider, model)
 );
+
+-- x-ai/grok-stt-1.0 withdrawn from OpenRouter: the videos that fell back to their initial text because of it go back in line (once)
+UPDATE videos SET retx_status = 'todo', retx_attempts = 0, retx_error = NULL, retx_next_at = NULL
+  WHERE retx_status IN ('initial', 'retry') AND retx_error LIKE '%No endpoints found for x-ai/grok-stt-1.0%';

@@ -105,7 +105,7 @@ test('Grok STT : requête OpenRouter bien formée, clé seulement dans l’en-t�
     assert.equal(calls[0].url, 'https://openrouter.ai/api/v1/audio/transcriptions');
     assert.equal(calls[0].auth, 'Bearer sk-or-test');
     assert.ok(!calls[0].url.includes('sk-or'));
-    assert.deepEqual([calls[0].body.model, calls[0].body.input_audio.format, calls[0].body.input_audio.data, calls[0].body.language, calls[0].body.response_format], ['x-ai/grok-stt-1.0', 'mp3', Buffer.from('mp3').toString('base64'), 'fr', 'verbose_json']);
+    assert.deepEqual([calls[0].body.model, calls[0].body.input_audio.format, calls[0].body.input_audio.data, calls[0].body.language, calls[0].body.response_format], ['x-ai/grok-stt-2.0', 'mp3', Buffer.from('mp3').toString('base64'), 'fr', 'verbose_json']);
     assert.ok(calls[0].body.keyterms.includes('Lisnard'));
     assert.equal(calls[1].body.keyterms, undefined);
     assert.deepEqual(r.words.map((w) => w.word), ['Bonjour.']);
@@ -323,4 +323,19 @@ test('description introuvable (YouTube bloque le serveur) : rien n’est gardé,
   assert.equal((await v()).description, null);
   await R.buildTranscript(await v(), deps);
   assert.equal(asked, 2);
+});
+
+test('Grok STT 1.0 retiré d’OpenRouter : modèle 2.0 par défaut ; les vidéos tombées en échec à cause de lui repartent en file', { skip: !enabled }, async () => {
+  const { STT_MODEL, sttModel } = await import('../src/retranscribe/stt.js');
+  assert.equal(STT_MODEL, 'x-ai/grok-stt-2.0');
+  process.env.RETX_STT_MODEL = 'autre/modele';
+  assert.equal(sttModel(), 'autre/modele', 'réglable sans toucher au code');
+  delete process.env.RETX_STT_MODEL;
+  const hit = await makeVideo('RETXtest_stt1');
+  const other = await makeVideo('RETXtest_stt2');
+  await pool.query("UPDATE videos SET retx_status = 'initial', retx_attempts = 2, retx_error = 'Transcription refusée (No endpoints found for x-ai/grok-stt-1.0.).' WHERE id = $1", [hit]);
+  await pool.query("UPDATE videos SET retx_status = 'initial', retx_attempts = 2, retx_error = 'Aucune parole reconnue dans la vidéo.' WHERE id = $1", [other]);
+  await db.initDb(); // run at every start of the server
+  assert.deepEqual(await stateOf(hit), { source: 'supadata', edited: false, retx_status: 'todo', retx_attempts: 0, retx_error: null });
+  assert.equal((await stateOf(other)).retx_status, 'initial', 'un autre échec ne repart pas tout seul');
 });
