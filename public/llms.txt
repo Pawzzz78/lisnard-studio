@@ -1,0 +1,12 @@
+# Studio Lisnard
+
+> Outil gratuit en ligne pour créer un TikTok ou un Reel à partir d'un extrait d'interview de David Lisnard : choix de l'extrait, sous-titres, musique, puis téléchargement d'une vidéo verticale prête à publier.
+
+Initiative de soutiens de David Lisnard. Site édité de façon indépendante, ni par Nouvelle Énergie ni par l’équipe de campagne.
+
+## Pages
+
+- [Studio](https://studio.projetlisnard.fr/): crée ta vidéo verticale à partir d'un extrait d'interview, avec sous-titres et musique.
+- [Bibliothèque](https://studio.projetlisnard.fr/bibliotheque/): les clips créés dans le studio par la communauté, à télécharger, noter et réutiliser.
+- [Le mur](https://studio.projetlisnard.fr/mur/): les TikToks les plus vus, aimés et commentés avec le hashtag #projetlisnard.
+- [Mentions légales](https://studio.projetlisnard.fr/mentions-legales/): éditeur, hébergeur, données personnelles, propriété intellectuelle et contact.
