@@ -82,8 +82,12 @@ qu'à choisir les extraits.
   complète, idéalement 20 à 45 s. Le modèle ne choisit que des **numéros de lignes** de la transcription : les horaires viennent de la
   transcription et il ne peut ni inventer ni modifier un mot. **Gros morceaux** : une ligne de plus de 12 s (sous-titres automatiques, texte collé avec peu d'horodatages) est découpée en phrases avant d'être envoyée au modèle, aux horaires estimés comme dans l'éditeur (durée répartie selon la longueur des mots ; sans durée connue, un long texte garde son temps de parole), sinon aucun extrait de 15 à 60 s ne pouvait être choisi. Garde-fou de fidélité conservé : un extrait commence et finit sur une
   phrase entière et ne coupe jamais avant un « mais », une nuance, une réserve ou une condition qui change le sens. Résultats stockés ;
-  ils sont signalés comme périmés si la transcription change. Modèle : `CLIP_MODEL`, par défaut `openai/gpt-4.1-mini` (sans raisonnement,
-  environ 0,01 $ par interview), indépendant du modèle des résumés. Réglages : `CLIP_MAX_SUGGESTIONS` (20), `CLIP_MIN_S` (15),
+  ils sont signalés comme périmés si la transcription change. Modèle : `CLIP_MODEL`, par défaut `anthropic/claude-sonnet-5.5`
+  (jugement éditorial nettement meilleur, environ 0,10 $ pour 20 minutes d'interview ; `openai/gpt-4.1-mini` reste possible, environ dix fois
+  moins cher), indépendant du modèle des résumés. Le modèle reçoit aussi le **titre et la description** de la vidéo (nom de l'émission,
+  invités, sujets), doit couvrir chaque moment fort et varier les durées (15-30 s et 30-60 s). Sur une transcription ponctuée (Grok,
+  Whisper), le début et la fin sont ensuite **calés sur des phrases entières** (jusqu'à 3 lignes de part et d'autre, sans dépasser 60 s).
+  Réglages : `CLIP_MAX_SUGGESTIONS` (30), `CLIP_MIN_S` (15),
   `CLIP_MAX_S` (60), `CLIP_MIN_SCORE` (7) ; certains extraits sont écartés ensuite (durée hors limites, chevauchement avec un mieux noté).
   **Qualité** : le modèle a l'ordre d'être sévère (note de 9-10 réservée à l'exceptionnel), de ne jamais proposer salutations, accueil,
   remerciements, au revoir, transitions, questions de l'intervieweur ni phrases vagues, et de répondre par une liste vide plutôt que de
