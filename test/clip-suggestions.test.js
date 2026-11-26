@@ -366,7 +366,7 @@ test('qualité : rien de fort dans l\'interview donne une liste vide conservée,
 test('consigne : version du prompt, note minimale et filtres décrits', async () => {
   const { PROMPT_VERSION } = await import('../src/clip-suggestions.js');
   const { QUALITY } = await import('../src/clip-quality.js');
-  assert.equal(PROMPT_VERSION, 'c6');
+  assert.equal(PROMPT_VERSION, 'c7');
   assert.equal(QUALITY.minScore, 7);
   assert.equal(QUALITY.edgeMs, 60_000);
 });
