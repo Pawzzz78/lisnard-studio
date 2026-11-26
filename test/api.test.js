@@ -173,7 +173,7 @@ test('en-têtes de sécurité : CSP stricte sur les pages, HSTS seulement en HTT
   const csp = plain.headers.get('content-security-policy');
   assert.match(csp, /default-src 'self'/);
   assert.match(csp, /frame-ancestors 'none'/);
-  assert.match(csp, /frame-src https:\/\/www\.youtube\.com https:\/\/www\.tiktok\.com/);
+  assert.match(csp, /frame-src https:\/\/www\.youtube\.com https:\/\/www\.youtube-nocookie\.com https:\/\/www\.tiktok\.com/);
   assert.match(csp, /img-src [^;]*https:\/\/i\.ytimg\.com/);
   assert.doesNotMatch(csp, /script-src [^;]*unsafe/);
   assert.equal(plain.headers.get('x-frame-options'), 'DENY');

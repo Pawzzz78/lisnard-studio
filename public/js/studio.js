@@ -3,6 +3,7 @@
 import { CARD, PALETTES as EC_PALETTES, TEMPLATES as EC_TEMPLATES, cardBlob, drawEndCard, loadImage, needsPhoto } from './endcard.js';
 import { BEGINNER_DEFAULTS, DESCRIPTION_MAX, LIMITS, LOGO, MODELS, PRESETS, SIMILARITY_WARNING, draftFromClip, descriptionFooter, endCardSettings, fitDescription, modelFromState, parseModels, sanitizeModel, groupWords, lineSimilarity, sanitizeLevel, sanitizeStyle, sanitizeZoom, sourceText, stepLabels, stepsFor, wordsForExtracts } from './studio-core.js';
 import { createPhone, el, outlineShadow, rgba } from './studio-preview.js';
+import { createRangePicker } from './studio-range.js';
 import { fmtDate } from './ui.js';
 
 const root = document.getElementById('studio');
@@ -411,6 +412,8 @@ async function openEditor(youtubeId) {
       if (cropSlider) cropSlider.value = String(Math.round(cropX * 100));
     },
   });
+  // One sound at a time: the clip preview stops the YouTube player of the Extrait step (and the other way round, see onPlay)
+  phone.video.addEventListener('play', () => range.picker?.pause());
   /** Le cadre suit le visage : plein écran, suivi demandé, interview analysée et trajectoire reçue. */
   const following = () => S.layout.fit === 'crop' && S.layout.follow.on && S.framing.ready && Boolean(S.framing.segments);
   const pushFraming = () => phone.setFraming({ fit: S.layout.fit, cropX: S.layout.cropX, mirror: S.layout.mirror, follow: following() ? S.framing.segments : null });
@@ -441,10 +444,13 @@ async function openEditor(youtubeId) {
     renderFrame();
   }
   /** Mots horodatés du clip, corrections de texte comprises. */
-  const clipWords = () => wordsForExtracts(S.edits.size ? S.lines.map((l) => (S.edits.has(l.start_ms) ? { ...l, text: S.edits.get(l.start_ms).text } : l)) : S.lines, S.extracts.map(exMs), S.silences).words;
+  const range = { picker: null }; // range picker of the Extrait step, created on first display
+  const editedLines = () => (S.edits.size ? S.lines.map((l) => (S.edits.has(l.start_ms) ? { ...l, text: S.edits.get(l.start_ms).text } : l)) : S.lines);
+  const clipWords = () => wordsForExtracts(editedLines(), S.extracts.map(exMs), S.silences).words;
   function rebuildSubtitles() {
     const words = clipWords();
     phone.configure({ groups: groupWords(words, S.style), style: S.style, font: fontById.get(S.style.font) });
+    range.picker?.refreshText();
   }
   function applyAudio() {
     const track = assets.music.find((m) => m.id === S.music.id);
@@ -553,13 +559,54 @@ async function openEditor(youtubeId) {
     const matches = S.lines.map((l, i) => ({ l, i })).filter(({ l }) => !q || l.text.toLowerCase().includes(q));
     put(lineList,
       ...matches.slice(0, shown).map(({ l, i }) =>
-        el('li', {}, el('button', { type: 'button', onclick: () => startFree(i) }, el('span', { class: 'st-t' }, mmss(l.start_ms)), el('span', {}, l.text))),
+        el('li', { class: S.extracts[0] && l.end_ms > S.extracts[0].start_ms && l.start_ms < S.extracts[0].end_ms ? 'in' : null }, el('button', { type: 'button', onclick: () => startFree(i) }, el('span', { class: 'st-t' }, mmss(l.start_ms)), el('span', {}, l.text))),
       ),
       matches.length > shown ? el('li', {}, el('button', { type: 'button', class: 'st-more', onclick: () => { shown += 60; renderLines(); } }, `Afficher plus (${matches.length - shown} lignes)`)) : null,
       !matches.length ? el('li', { class: 'st-none' }, 'Aucune ligne ne correspond.') : null,
     );
   }
   search.addEventListener('input', debounce(() => { shown = 60; renderLines(); }, 200));
+  // --- début et fin de l'extrait : lecteur YouTube + barre à deux curseurs (créé une fois, gardé d'un rendu à l'autre)
+  function rangePicker() {
+    range.picker ??= createRangePicker({
+      youtubeId: S.video.youtube_id,
+      durationMs: videoEndMs(),
+      minMs: LIMITS.minExtractS * 1000,
+      maxMs: LIMITS.maxTotalS * 1000,
+      wordsFor: (a, b) => wordsForExtracts(editedLines(), [{ start_ms: a, end_ms: b }], S.silences).words,
+      onChange: (a, b) => {
+        const cur = S.extracts[0];
+        if (!cur) return addExtract(a, b, null, null, null, true);
+        if (cur.start_ms === a && cur.end_ms === b) return;
+        cur.start_ms = a;
+        cur.end_ms = b;
+        extractsChanged(true);
+      },
+      onPlay: () => phone.pause(),
+    });
+    return range.picker;
+  }
+  /** Bloc « Ton extrait » : la barre de réglage du début et de la fin, ou de quoi commencer s'il n'y a pas encore d'extrait. */
+  function pickerBlock() {
+    const cur = S.extracts[0] ?? null;
+    if (!cur) {
+      return easy()
+        ? null
+        : el('div', { class: 'rp-empty' },
+            el('p', {}, 'Choisis un extrait proposé, ou place-toi où tu veux dans la vidéo.'),
+            el('button', { class: 'btn small', type: 'button', onclick: () => addExtract(0, Math.min(30_000, videoEndMs()), null, null, null, true) }, 'Choisir moi-même dans la vidéo'));
+    }
+    const p = rangePicker();
+    p.set(cur.start_ms, cur.end_ms);
+    p.setFull(!easy());
+    return el('section', { class: 'st-range' },
+      el('h3', {}, 'Ajuste ton extrait'),
+      el('p', { class: 'st-help' }, easy()
+        ? 'Fais glisser les deux curseurs pour choisir où ton clip commence et où il finit.'
+        : 'Fais glisser les curseurs, ou lance la vidéo et appuie sur « Début ici » puis « Fin ici ». La barre « Toute la vidéo » t’emmène n’importe où dans l’interview.'),
+      p.root);
+  }
+
   function startFree(i) {
     let b = i;
     while (b + 1 < S.lines.length && (S.lines[b].end_ms - S.lines[i].start_ms) / 1000 < 25) b++;
@@ -601,12 +648,14 @@ async function openEditor(youtubeId) {
 
   function renderExtracts() {
     if (easy()) {
-      return putKeep(panelExtracts, ...easyExtracts());
+      const block = pickerBlock();
+      return putKeep(panelExtracts, block, block ? el('h3', { class: 'st-range-other' }, 'Ou choisis un autre extrait') : null, ...easyExtracts());
     }
     const cur = S.extracts[0] ?? null;
     const free = cur && cur.from == null ? cur : null; // passage choisi dans la transcription (pas un extrait proposé)
     putKeep(panelExtracts,
       note,
+      pickerBlock(),
       el('h3', {}, 'Extraits proposés par l’IA'),
       S.suggestions.length
         ? el('ul', { class: 'st-sugg' }, S.suggestions.slice(0, suggShown).map((sg) => {
@@ -622,7 +671,7 @@ async function openEditor(youtubeId) {
         : el('p', { class: 'st-help' }, 'Pas d’extrait proposé pour cette vidéo : choisis un passage dans la transcription.'),
       ...(S.suggestions.length > suggShown ? [el('button', { class: 'btn secondary small', type: 'button', onclick: () => { suggShown += 8; renderExtracts(); } }, `Voir ${Math.min(8, S.suggestions.length - suggShown)} extrait${S.suggestions.length - suggShown > 1 ? 's' : ''} de plus (${S.suggestions.length - suggShown} restant${S.suggestions.length - suggShown > 1 ? 's' : ''})`)] : []),
       el('h3', {}, 'Choisir un autre passage'),
-      el('p', { class: 'st-help' }, 'Touche une ligne de la transcription : l’extrait démarre là (environ 25 secondes).'),
+      el('p', { class: 'st-help' }, 'Touche une ligne de la transcription : l’extrait démarre là (environ 25 secondes), puis ajuste-le avec les curseurs plus haut. Les lignes de ton extrait sont surlignées.'),
       free ? el('p', { class: 'st-picked-note' }, `✓ Passage choisi : ${mmss(free.start_ms)} → ${mmss(free.end_ms)} (${secs(exDur(free))})`) : null,
       search,
       lineList,
@@ -1599,7 +1648,7 @@ async function openEditor(youtubeId) {
     niveau: { title: 'Quel est ton niveau ?', hint: 'Choisis ce qui te ressemble : on adapte les étapes pour que ce soit simple pour toi.', panel: panelLevel },
     extraits: {
       title: 'Choisis ton extrait',
-      hint: { debutant: 'Voici les meilleurs passages repérés par l’intelligence artificielle. Touche « Choisir » à côté de celui qui te plaît : tu le vois tout de suite dans l’aperçu.', avance: 'Prends un extrait proposé par l’IA, ou cherche le passage que tu veux dans la transcription.' },
+      hint: { debutant: 'Choisis un des meilleurs passages repérés par l’intelligence artificielle, puis fais glisser les curseurs pour régler le début et la fin.', avance: 'Prends un extrait proposé par l’IA ou parcours toute la vidéo, puis règle le début et la fin à la seconde près.' },
       panel: panelExtracts,
     },
     style: {
@@ -1843,6 +1892,7 @@ async function openEditor(youtubeId) {
     stopExpiry();
     phone.pause();
     phone.setAudio({ url: null });
+    range.picker?.destroy();
     audition.pause();
     jobBox.querySelector('video')?.pause();
     removeEventListener('beforeunload', beforeUnload);
