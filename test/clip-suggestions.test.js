@@ -123,7 +123,7 @@ test('fusion : meilleure note d\'abord, pas de chevauchement, nombre borné', ()
   const c = (start_ms, end_ms, score) => ({ start_ms, end_ms, score });
   const merged = mergeClips([c(0, 30000, 6), c(20000, 50000, 9), c(60000, 90000, 5), c(100000, 130000, 7)]);
   assert.deepEqual(merged.map((m) => m.score), [9, 7, 5]);
-  assert.equal(mergeClips(Array.from({ length: 20 }, (_, i) => c(i * 100000, i * 100000 + 30000, 5))).length, CLIP_LIMITS.maxSuggestions);
+  assert.equal(mergeClips(Array.from({ length: 40 }, (_, i) => c(i * 100000, i * 100000 + 30000, 5))).length, CLIP_LIMITS.maxSuggestions);
 });
 
 // --- avec la base de données ----------------------------------------------------------
@@ -233,7 +233,8 @@ test('modèle des extraits : propre aux extraits, jamais celui des résumés / t
 
 test('le modèle est invité à proposer jusqu\'à 20 extraits par tranche', async () => {
   const { suggestClipsFor } = await import('../src/clip-suggestions.js');
-  assert.equal(CLIP_LIMITS.maxSuggestions, 20);
+  assert.equal(CLIP_LIMITS.maxSuggestions, 30);
+  assert.equal(CLIP_LIMITS.perWindow, 20);
   assert.equal(CLIP_LIMITS.minS, 15);
   const seen = [];
   const complete = async ({ system }) => {
@@ -365,7 +366,30 @@ test('qualité : rien de fort dans l\'interview donne une liste vide conservée,
 test('consigne : version du prompt, note minimale et filtres décrits', async () => {
   const { PROMPT_VERSION } = await import('../src/clip-suggestions.js');
   const { QUALITY } = await import('../src/clip-quality.js');
-  assert.equal(PROMPT_VERSION, 'c5');
+  assert.equal(PROMPT_VERSION, 'c7');
   assert.equal(QUALITY.minScore, 7);
   assert.equal(QUALITY.edgeMs, 60_000);
+});
+
+test('phrases entières : début reculé et fin prolongée jusqu’à une fin de phrase, seulement si la transcription est ponctuée', async () => {
+  const { snapToSentences, punctuated } = await import('../src/clip-suggestions.js');
+  const L = (i, text) => ({ start_ms: i * 4000, end_ms: i * 4000 + 4000, text });
+  const segs = [L(0, 'Merci de me recevoir.'), L(1, 'Je pense que la France'), L(2, 'doit baisser ses dépenses'), L(3, 'et ses impôts.'), L(4, 'Voilà ce que je propose'), L(5, 'aux Français.'), L(6, 'Autre sujet.')];
+  assert.ok(punctuated(segs));
+  // the model picked lines 2..4: both ends are mid-sentence
+  assert.deepEqual(snapToSentences(segs, 2, 4, { maxS: 60 }), [1, 5]);
+  // already whole sentences: unchanged
+  assert.deepEqual(snapToSentences(segs, 1, 3, { maxS: 60 }), [1, 3]);
+  // the 60 s limit wins over the end of the sentence
+  assert.deepEqual(snapToSentences(segs, 2, 4, { maxS: 12 }), [2, 4]);
+  // YouTube captions without punctuation: nothing moves
+  const raw = segs.map((x) => ({ ...x, text: x.text.replace(/[.]/g, '') }));
+  assert.ok(!punctuated(raw));
+});
+
+test('contexte : le titre et la description de la vidéo sont donnés au modèle avant la transcription', async () => {
+  const { suggestClipsFor } = await import('../src/clip-suggestions.js');
+  let user = '';
+  await suggestClipsFor(rows(40, 5), { complete: async (a) => ((user = a.user), '{"clips":[]}'), model: 'x', context: { title: 'DLIVE', description: 'Le premier DLIVE' } });
+  assert.match(user, /^Titre de la vidéo : DLIVE\nDescription de la vidéo :\nLe premier DLIVE\n\nTranscription :\n\[0\]/);
 });
