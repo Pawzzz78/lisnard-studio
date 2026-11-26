@@ -28,7 +28,7 @@ import { startTrendingScheduler } from './studio/trending.js';
 const CSP = [
   "default-src 'self'",
   "script-src 'self' https://www.youtube.com",
-  'frame-src https://www.youtube.com https://www.tiktok.com',
+  'frame-src https://www.youtube.com https://www.youtube-nocookie.com https://www.tiktok.com',
   "img-src 'self' blob: data: https://i.ytimg.com https://pixabay.com https://cdn.pixabay.com https://images.pexels.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",

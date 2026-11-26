@@ -99,6 +99,7 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, wordsFo
     loadYT()
       .then((YT) => {
         player = new YT.Player(playerHost, {
+          host: 'https://www.youtube-nocookie.com', // privacy-enhanced mode: no tracking cookie before playback
           videoId: youtubeId,
           width: '100%',
           height: '100%',
@@ -267,6 +268,7 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, wordsFo
   function apply(a, b, which, commit = 'now') {
     [start, end] = constrain(a, b, which, limits);
     if (start < view.lo || end > view.hi) view = viewAround(start, end, durationMs);
+    if (listenUntil != null) listenUntil = end; // « Écouter l'extrait » stops at the new end
     draw();
     clearTimeout(commitTimer);
     if (commit === 'now') onChange(start, end);
@@ -282,8 +284,14 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, wordsFo
     if (t == null) return;
     const len = end - start;
     // A start after the current end keeps the length; an end before the start does too
-    if (which === 'start') apply(t, t >= end - minMs ? t + len : end, t >= end - minMs ? 'both' : 'start');
-    else apply(t <= start + minMs ? t - len : start, t, t <= start + minMs ? 'both' : 'end');
+    // Past the other bound, or too far from it for the 90 s limit: the whole extract moves there, same length
+    if (which === 'start') {
+      const move = t >= end - minMs || end - t > maxMs;
+      apply(t, move ? t + len : end, move ? 'both' : 'start');
+    } else {
+      const move = t <= start + minMs || t - start > maxMs;
+      apply(move ? t - len : start, t, move ? 'both' : 'end');
+    }
   }
   function toggleListen() {
     if (playerState === 'idle') ensurePlayer();
@@ -388,13 +396,26 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, wordsFo
     });
   }
 
+  // YouTube is only contacted once the block is on screen (not at studio start-up, nor on other steps)
+  let seen = null;
+  function watchVisible() {
+    if (seen || playerState !== 'idle') return;
+    if (typeof IntersectionObserver === 'undefined') return ensurePlayer();
+    seen = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      seen.disconnect();
+      ensurePlayer();
+    });
+    seen.observe(playerBox);
+  }
+
   draw();
   syncButtons();
   return {
     root,
     /** Bornes venues d'ailleurs (extrait proposé, ligne de la transcription) : la vue se recentre si elles en sortent. */
     set(a, b) {
-      ensurePlayer();
+      watchVisible();
       if (a === start && b === end) return;
       [start, end] = constrain(a, b, 'end', limits);
       if (start < view.lo || end > view.hi || end - start < (view.hi - view.lo) / 8) view = viewAround(start, end, durationMs);
@@ -411,6 +432,7 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, wordsFo
       if (isPlaying()) player.pauseVideo();
     },
     destroy() {
+      seen?.disconnect();
       clearInterval(poll);
       clearTimeout(commitTimer);
       player?.destroy?.();
