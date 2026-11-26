@@ -14,7 +14,8 @@ concurrency:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04 (ffmpeg 8), which changes the render and thumbnail tests' results; prod (Nixpacks) is not on ffmpeg 8
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
