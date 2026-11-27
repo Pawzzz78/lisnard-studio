@@ -609,12 +609,12 @@ async function openEditor(youtubeId) {
     }
     const card = (sg) => {
       const on = cur?.from === sg.start_ms;
-      return el('li', { class: on ? 'st-pick on' : 'st-pick' },
-        el('div', { class: 'st-pick-body' },
-          el('h3', { class: 'st-pick-title' }, sg.title),
-          el('p', { class: 'st-pick-meta' }, `${mmss(sg.start_ms)} · ${Math.round(sg.duration_s)} s`, easy() ? null : el('span', { class: 'badge ok', title: 'Potentiel viral estimé par l’IA' }, `${sg.score}/10`)),
+      return el('li', { class: on ? 'st-aiclip on' : 'st-aiclip' },
+        el('div', { class: 'st-aiclip-body' },
+          el('h3', { class: 'st-aiclip-title' }, sg.title),
+          el('p', { class: 'st-aiclip-meta' }, `${mmss(sg.start_ms)} · ${Math.round(sg.duration_s)} s`, easy() ? null : el('span', { class: 'badge ok', title: 'Potentiel viral estimé par l’IA' }, `${sg.score}/10`)),
           el('details', {}, el('summary', {}, 'Lire le texte'), el('p', { class: 'st-text' }, sg.text))),
-        el('div', { class: 'st-pick-actions' },
+        el('div', { class: 'st-aiclip-actions' },
           el('button', { class: 'btn secondary small', type: 'button', 'data-k': `play:${sg.start_ms}`, onclick: () => rangePicker().play(sg.start_ms, sg.end_ms) }, '▶ Écouter'),
           el('button', { class: on ? 'btn small st-picked' : 'btn small', type: 'button', 'aria-pressed': String(on), 'data-k': `sg:${sg.start_ms}`, onclick: () => !on && addExtract(sg.start_ms, sg.end_ms, sg.title, sg.start_ms, sg.description, true) }, on ? '✓ Choisi' : 'Choisir')));
     };
