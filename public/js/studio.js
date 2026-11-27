@@ -1683,7 +1683,7 @@ async function openEditor(youtubeId) {
     renderToggle.setAttribute('aria-pressed', String(on));
     renderToggle.textContent = on ? 'Revenir à la vidéo' : 'Voir le rendu TikTok';
     if (on) range.picker?.pause();
-    else phone.pause();
+    else if (root.dataset.tab === 'extraits') phone.pause(); // back to the video: the clip preview stops; other steps keep it playing
   }
   function openTab(id, focus = false) {
     const list = stepList();

@@ -500,6 +500,7 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, allWord
   draw();
   syncButtons();
   let built = false;
+  let stale = false; // words changed while the transcript was off screen: rebuilt when it shows again
   return {
     root,
     playerBox,
@@ -507,8 +508,9 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, allWord
     /** Bornes venues d'ailleurs (extrait proposé) : la vue se recentre. */
     set(a, b) {
       watchVisible();
-      if (!built) {
+      if (!built || stale) {
         built = true;
+        stale = false;
         buildTranscript();
       }
       if (a === start && b === end) return;
@@ -518,7 +520,10 @@ export function createRangePicker({ youtubeId, durationMs, minMs, maxMs, allWord
     },
     /** Les mots ont changé (corrections, pauses de la voix) : la transcription est reconstruite, à la même position. */
     refreshText() {
-      if (built) buildTranscript();
+      if (!built) return;
+      // Subtitle style changes call this too: only rebuild a transcript that is on screen
+      if (body.offsetParent) buildTranscript();
+      else stale = true;
     },
     /** Lit un passage dans la vidéo (bouton « Écouter » d'un extrait proposé) et s'arrête à sa fin. */
     play(a, b) {
