@@ -36,7 +36,7 @@ export const fetchConfig = () => ({
   maxHeight: Math.min(2160, Math.max(240, num(process.env.AUTO_DOWNLOAD_MAX_HEIGHT, 720))),
   minDurationS: Math.max(0, num(process.env.AUTO_DOWNLOAD_MIN_S, 600)), // format long seulement
   retentionDays: Math.max(1, num(process.env.VIDEO_RETENTION_DAYS, 90)),
-  minFreeMb: Math.max(0, num(process.env.AUTO_DOWNLOAD_MIN_FREE_MB, 1500)),
+  minFreeMb: Math.max(0, num(process.env.AUTO_DOWNLOAD_MIN_FREE_MB, 200)),
   timeoutMin: Math.max(1, num(process.env.AUTO_DOWNLOAD_TIMEOUT_MIN, 60)),
   enableClips: flag(process.env.AUTO_ENABLE_CLIPS, true),
   maxAttempts: 5,
